@@ -50,7 +50,7 @@ namespace Core.Bootstrap
             builder.Register<LogService>(Lifetime.Singleton)
                 .As<ILogService>();
             
-            builder.RegisterComponentInHierarchy<LogPanel>();
+            // builder.RegisterComponentInHierarchy<LogPanel>();
         }
     }
 }
