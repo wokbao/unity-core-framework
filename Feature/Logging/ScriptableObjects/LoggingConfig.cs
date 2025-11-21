@@ -1,12 +1,10 @@
-using UnityEngine;
+﻿using UnityEngine;
 using Core.Feature.Logging.Abstractions;
 
 namespace Core.Feature.Logging.ScriptableObjects
 {
     /// <summary>
-    /// 日志系统配置文件。
-    /// 控制日志等级、输出模式、过滤规则等。
-    /// 所有日志服务初始化时会读取本配置。
+    /// 日志系统配置文件，控制全局等级、分类过滤和输出通道。
     /// </summary>
     [CreateAssetMenu(
         fileName = "LoggingConfig",
@@ -14,17 +12,35 @@ namespace Core.Feature.Logging.ScriptableObjects
         order = 1)]
     public sealed class LoggingConfig : ScriptableObject
     {
-        [Header("最小日志等级")]
+        [Header("全局最小等级")]
         [Tooltip("低于此等级的日志将被忽略")]
         public LogLevel minimumLogLevel = LogLevel.Debug;
 
-        [Header("是否输出到 Unity 控制台 (UnityLogSink)")]
+        [Header("分类覆盖（可选）")]
+        [Tooltip("为指定分类单独设置开关和最小等级")]
+        public LogCategoryOverride[] categoryOverrides = new LogCategoryOverride[0];
+
+        [Header("输出通道")]
+        [Tooltip("是否输出到 Unity 控制台 (UnityLogSink)")]
         public bool enableUnityConsoleOutput = true;
 
-        [Header("是否输出到文件（未来可扩展 FileLogSink）")]
+        [Tooltip("是否输出到文件（如 FileLogSink）")]
         public bool enableFileOutput = false;
 
-        [Header("是否输出到外部（如网络、调试面板）")]
+        [Tooltip("是否输出到外部（网络、调试面板等）")]
         public bool enableExternalOutput = false;
+    }
+
+    [System.Serializable]
+    public struct LogCategoryOverride
+    {
+        [Tooltip("要配置的日志分类")]
+        public LogCategory category;
+
+        [Tooltip("是否启用该分类")]
+        public bool enabled;
+
+        [Tooltip("该分类的最小日志等级")]
+        public LogLevel minimumLogLevel;
     }
 }
