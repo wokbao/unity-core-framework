@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using Core.Feature.Logging.Abstractions;
 using Core.Feature.Logging.ScriptableObjects;
 using R3;
-using System.Runtime.CompilerServices;
 
 namespace Core.Feature.Logging.Runtime
 {
@@ -14,7 +14,8 @@ namespace Core.Feature.Logging.Runtime
     {
         private readonly IList<ILogSink> logSinks;
         private readonly Subject<LogEntry> subject;
-        private readonly LogLevel minimumLogLevel;
+        private readonly LogLevel globalMinimumLevel;
+        private readonly Dictionary<LogCategory, CategoryRule> categoryRules;
 
         public Observable<LogEntry> LogStream => subject;
 
@@ -25,9 +26,11 @@ namespace Core.Feature.Logging.Runtime
             logSinks = new List<ILogSink>(sinks ?? Array.Empty<ILogSink>());
             subject = new Subject<LogEntry>();
 
-            minimumLogLevel = config != null
+            globalMinimumLevel = config != null
                 ? config.minimumLogLevel
                 : LogLevel.Debug;
+
+            categoryRules = BuildCategoryRules(config);
         }
 
         public void Debug(
@@ -81,8 +84,20 @@ namespace Core.Feature.Logging.Runtime
             string callerMemberName = "",
             int callerLineNumber = 0)
         {
-            if (level < minimumLogLevel)
+            // 全局等级过滤
+            if (level < globalMinimumLevel)
+            {
                 return;
+            }
+
+            // 分类规则过滤（如果有）
+            if (categoryRules.TryGetValue(category, out var rule))
+            {
+                if (!rule.Enabled || level < rule.MinimumLevel)
+                {
+                    return;
+                }
+            }
 
             var entry = new LogEntry(
                 DateTime.Now,
@@ -96,9 +111,46 @@ namespace Core.Feature.Logging.Runtime
 
             subject.OnNext(entry);
 
-            foreach (var sink in logSinks)
+            var count = logSinks.Count;
+            for (var index = 0; index < count; index += 1)
             {
-                sink.Write(entry);
+                logSinks[index].Write(entry);
+            }
+        }
+
+        private static Dictionary<LogCategory, CategoryRule> BuildCategoryRules(LoggingConfig config)
+        {
+            var result = new Dictionary<LogCategory, CategoryRule>();
+
+            if (config?.categoryOverrides == null)
+            {
+                return result;
+            }
+
+            foreach (var @override in config.categoryOverrides)
+            {
+                if (result.ContainsKey(@override.category))
+                {
+                    continue;
+                }
+
+                result[@override.category] = new CategoryRule(
+                    @override.enabled,
+                    @override.minimumLogLevel);
+            }
+
+            return result;
+        }
+
+        private readonly struct CategoryRule
+        {
+            public readonly bool Enabled;
+            public readonly LogLevel MinimumLevel;
+
+            public CategoryRule(bool enabled, LogLevel minimumLevel)
+            {
+                Enabled = enabled;
+                MinimumLevel = minimumLevel;
             }
         }
 
