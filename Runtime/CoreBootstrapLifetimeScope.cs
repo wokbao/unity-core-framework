@@ -2,7 +2,7 @@ using UnityEngine;
 using VContainer;
 using VContainer.Unity;
 
-namespace FoodStreet.Core.Bootstrap
+namespace Core.Runtime
 {
     /// <summary>
     /// Core_Bootstrap 的根 Scope，标记为常驻场景，注册全局服务。

@@ -1,6 +1,6 @@
 using VContainer;
 
-namespace FoodStreet.Core.Bootstrap
+namespace Core.Runtime
 {
     /// <summary>
     /// Core 层服务注册（时间、事件、日志等），挂到 CoreBootstrap 物体上。
