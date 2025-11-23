@@ -9,16 +9,40 @@ namespace Core.Feature.Logging.Runtime
 {
     /// <summary>
     /// 日志服务默认实现：负责等级过滤、广播日志并分发到各个接收器。
+    /// 实现了<see cref="ILogService"/>接口，提供了多级别、多类别的日志记录功能。
     /// </summary>
     public sealed class LogService : ILogService, IDisposable
     {
+        /// <summary>
+        /// 存储所有日志接收器的列表
+        /// </summary>
         private readonly IList<ILogSink> logSinks;
+        
+        /// <summary>
+        /// 用于广播日志条目的Reactive Subject
+        /// </summary>
         private readonly Subject<LogEntry> subject;
+        
+        /// <summary>
+        /// 全局最小日志等级，低于此等级的日志将被过滤
+        /// </summary>
         private readonly LogLevel globalMinimumLevel;
+        
+        /// <summary>
+        /// 按日志类别存储的特定规则字典
+        /// </summary>
         private readonly Dictionary<LogCategory, CategoryRule> categoryRules;
 
+        /// <summary>
+        /// 获取可观察的日志流，允许订阅所有日志条目
+        /// </summary>
         public Observable<LogEntry> LogStream => subject;
 
+        /// <summary>
+        /// 初始化LogService实例
+        /// </summary>
+        /// <param name="sinks">日志接收器集合，用于处理日志输出</param>
+        /// <param name="config">日志配置，包含全局设置和类别覆盖规则</param>
         public LogService(
             IEnumerable<ILogSink> sinks,
             LoggingConfig config)
@@ -33,6 +57,14 @@ namespace Core.Feature.Logging.Runtime
             categoryRules = BuildCategoryRules(config);
         }
 
+        /// <summary>
+        /// 记录Debug级别日志
+        /// </summary>
+        /// <param name="category">日志类别</param>
+        /// <param name="message">日志消息</param>
+        /// <param name="callerPath">调用者文件路径（自动填充）</param>
+        /// <param name="callerMemberName">调用者方法名（自动填充）</param>
+        /// <param name="callerLineNumber">调用者行号（自动填充）</param>
         public void Debug(
             LogCategory category,
             string message,
@@ -41,6 +73,14 @@ namespace Core.Feature.Logging.Runtime
             [CallerLineNumber] int callerLineNumber = 0)
             => WriteInternal(LogLevel.Debug, category, message, null, callerPath, callerMemberName, callerLineNumber);
 
+        /// <summary>
+        /// 记录Information级别日志
+        /// </summary>
+        /// <param name="category">日志类别</param>
+        /// <param name="message">日志消息</param>
+        /// <param name="callerPath">调用者文件路径（自动填充）</param>
+        /// <param name="callerMemberName">调用者方法名（自动填充）</param>
+        /// <param name="callerLineNumber">调用者行号（自动填充）</param>
         public void Information(
             LogCategory category,
             string message,
@@ -49,6 +89,14 @@ namespace Core.Feature.Logging.Runtime
             [CallerLineNumber] int callerLineNumber = 0)
             => WriteInternal(LogLevel.Information, category, message, null, callerPath, callerMemberName, callerLineNumber);
 
+        /// <summary>
+        /// 记录Warning级别日志
+        /// </summary>
+        /// <param name="category">日志类别</param>
+        /// <param name="message">日志消息</param>
+        /// <param name="callerPath">调用者文件路径（自动填充）</param>
+        /// <param name="callerMemberName">调用者方法名（自动填充）</param>
+        /// <param name="callerLineNumber">调用者行号（自动填充）</param>
         public void Warning(
             LogCategory category,
             string message,
@@ -57,6 +105,15 @@ namespace Core.Feature.Logging.Runtime
             [CallerLineNumber] int callerLineNumber = 0)
             => WriteInternal(LogLevel.Warning, category, message, null, callerPath, callerMemberName, callerLineNumber);
 
+        /// <summary>
+        /// 记录Error级别日志
+        /// </summary>
+        /// <param name="category">日志类别</param>
+        /// <param name="message">日志消息</param>
+        /// <param name="exception">关联的异常对象（可选）</param>
+        /// <param name="callerPath">调用者文件路径（自动填充）</param>
+        /// <param name="callerMemberName">调用者方法名（自动填充）</param>
+        /// <param name="callerLineNumber">调用者行号（自动填充）</param>
         public void Error(
             LogCategory category,
             string message,
@@ -66,6 +123,15 @@ namespace Core.Feature.Logging.Runtime
             [CallerLineNumber] int callerLineNumber = 0)
             => WriteInternal(LogLevel.Error, category, message, exception, callerPath, callerMemberName, callerLineNumber);
 
+        /// <summary>
+        /// 记录Critical级别日志
+        /// </summary>
+        /// <param name="category">日志类别</param>
+        /// <param name="message">日志消息</param>
+        /// <param name="exception">关联的异常对象（可选）</param>
+        /// <param name="callerPath">调用者文件路径（自动填充）</param>
+        /// <param name="callerMemberName">调用者方法名（自动填充）</param>
+        /// <param name="callerLineNumber">调用者行号（自动填充）</param>
         public void Critical(
             LogCategory category,
             string message,
@@ -75,6 +141,16 @@ namespace Core.Feature.Logging.Runtime
             [CallerLineNumber] int callerLineNumber = 0)
             => WriteInternal(LogLevel.Critical, category, message, exception, callerPath, callerMemberName, callerLineNumber);
 
+        /// <summary>
+        /// 内部日志写入方法，处理日志过滤和分发
+        /// </summary>
+        /// <param name="level">日志级别</param>
+        /// <param name="category">日志类别</param>
+        /// <param name="message">日志消息</param>
+        /// <param name="exception">关联的异常对象（可选）</param>
+        /// <param name="callerPath">调用者文件路径</param>
+        /// <param name="callerMemberName">调用者方法名</param>
+        /// <param name="callerLineNumber">调用者行号</param>
         private void WriteInternal(
             LogLevel level,
             LogCategory category,
@@ -109,8 +185,10 @@ namespace Core.Feature.Logging.Runtime
                 callerMemberName,
                 callerLineNumber);
 
+            // 广播日志条目到可观察流
             subject.OnNext(entry);
 
+            // 将日志条目分发到所有注册的接收器
             var count = logSinks.Count;
             for (var index = 0; index < count; index += 1)
             {
@@ -118,6 +196,11 @@ namespace Core.Feature.Logging.Runtime
             }
         }
 
+        /// <summary>
+        /// 从配置构建类别规则字典
+        /// </summary>
+        /// <param name="config">日志配置对象</param>
+        /// <returns>构建好的类别规则字典</returns>
         private static Dictionary<LogCategory, CategoryRule> BuildCategoryRules(LoggingConfig config)
         {
             var result = new Dictionary<LogCategory, CategoryRule>();
@@ -142,11 +225,26 @@ namespace Core.Feature.Logging.Runtime
             return result;
         }
 
+        /// <summary>
+        /// 表示特定日志类别的过滤规则
+        /// </summary>
         private readonly struct CategoryRule
         {
+            /// <summary>
+            /// 是否启用此类别
+            /// </summary>
             public readonly bool Enabled;
+            
+            /// <summary>
+            /// 此类别允许的最小日志级别
+            /// </summary>
             public readonly LogLevel MinimumLevel;
 
+            /// <summary>
+            /// 初始化类别规则
+            /// </summary>
+            /// <param name="enabled">是否启用</param>
+            /// <param name="minimumLevel">最小日志级别</param>
             public CategoryRule(bool enabled, LogLevel minimumLevel)
             {
                 Enabled = enabled;
@@ -154,6 +252,9 @@ namespace Core.Feature.Logging.Runtime
             }
         }
 
+        /// <summary>
+        /// 释放资源
+        /// </summary>
         public void Dispose()
         {
             subject?.OnCompleted();
