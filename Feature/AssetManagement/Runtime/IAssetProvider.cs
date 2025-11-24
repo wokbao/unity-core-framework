@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 using System.Threading;
-using System.Threading.Tasks;
+using Cysharp.Threading.Tasks;
 using UnityEngine;
 
 namespace Core.Feature.AssetManagement.Runtime
@@ -10,13 +10,13 @@ namespace Core.Feature.AssetManagement.Runtime
     /// </summary>
     public interface IAssetProvider
     {
-        Task<T> LoadAssetAsync<T>(string key, CancellationToken ct = default);
+        UniTask<T> LoadAssetAsync<T>(string key, CancellationToken ct = default);
 
         T LoadAssetSync<T>(string key);
 
-        Task PreloadAsync(IEnumerable<string> keys, CancellationToken ct = default);
+        UniTask PreloadAsync(IEnumerable<string> keys, CancellationToken ct = default);
 
-        Task<GameObject> InstantiateAsync(string key, Transform parent = null, bool worldSpace = false, CancellationToken ct = default);
+        UniTask<GameObject> InstantiateAsync(string key, Transform parent = null, bool worldSpace = false, CancellationToken ct = default);
 
         void Release(string key);
 
