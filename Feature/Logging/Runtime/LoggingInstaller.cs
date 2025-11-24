@@ -26,11 +26,17 @@ namespace Core.Feature.Logging.Runtime
 
         private readonly IAssetProvider assetProvider;
 
+        // 默认构造：仅依赖 IAssetProvider，内部自动创建默认 Options（纯 Addressables 加载）
+        public LoggingInstaller(IAssetProvider assetProvider)
+            : this(assetProvider, null)
+        {
+        }
+
         [Inject]
         public LoggingInstaller(IAssetProvider assetProvider, LoggingInstallerOptions options)
         {
             this.assetProvider = assetProvider;
-            Options = options;
+            Options = options ?? new LoggingInstallerOptions();
         }
 
         /// <summary>
