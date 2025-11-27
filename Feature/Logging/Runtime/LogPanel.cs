@@ -19,78 +19,78 @@ namespace Core.Feature.Logging.Runtime
         [Header("UI 引用")]
         [Tooltip("用于显示日志文本的 TextMeshProUGUI 组件")]
         [SerializeField]
-        private TextMeshProUGUI textArea;
+        private TextMeshProUGUI _textArea;
 
         [Header("显示设置")]
         [Tooltip("是否在游戏开始时默认显示面板")]
         [SerializeField]
-        private bool visibleOnStart = false;
+        private bool _visibleOnStart = false;
 
         [Tooltip("用于切换日志面板显示/隐藏的按键")]
         [SerializeField]
-        private KeyCode toggleKey = KeyCode.F1;
+        private KeyCode _toggleKey = KeyCode.F1;
 
         [Tooltip("显示的最小日志等级（低于此等级的日志不会显示在面板中）")]
         [SerializeField]
-        private LogLevel minimumLevelFilter = LogLevel.Debug;
+        private LogLevel _minimumLevelFilter = LogLevel.Debug;
 
         [Tooltip("最多保留的日志条数，超过后会从最旧的开始丢弃")]
         [SerializeField]
-        private int maxEntryCount = 200;
+        private int _maxEntryCount = 200;
 
         [Header("分类过滤（可选）")]
         [Tooltip("如果为空，则显示所有分类；如果设置了值，则只显示这些分类的日志")]
         [SerializeField]
-        private LogCategory[] enabledCategories = Array.Empty<LogCategory>();
+        private LogCategory[] _enabledCategories = Array.Empty<LogCategory>();
 
-        private readonly List<LogEntry> entries = new List<LogEntry>();
+        private readonly List<LogEntry> _entries = new List<LogEntry>();
 
-        private ILogService logService;
-        private IDisposable subscription;
+        private ILogService _logService;
+        private IDisposable _subscription;
 
-        private static readonly StringBuilder SharedBuilder = new StringBuilder(2048);
+        private static readonly StringBuilder _sharedBuilder = new StringBuilder(2048);
 
         [Inject]
-        public void Construct(ILogService logService)
+        public void Construct(ILogService service)
         {
-            this.logService = logService;
+            _logService = service ?? throw new ArgumentNullException(nameof(service));
         }
 
         private void Awake()
         {
-            if (textArea == null)
+            if (_textArea == null)
             {
-                textArea = GetComponentInChildren<TextMeshProUGUI>();
+                _textArea = GetComponentInChildren<TextMeshProUGUI>();
             }
 
-            if (textArea == null)
+            if (_textArea == null)
             {
                 Debug.LogWarning("LogPanel: 未找到 TextMeshProUGUI 引用，请在 Inspector 中手动绑定。");
             }
 
-            gameObject.SetActive(visibleOnStart);
+            gameObject.SetActive(_visibleOnStart);
         }
 
         private void Start()
         {
-            if (logService == null)
+            if (_logService == null)
             {
                 Debug.LogWarning("LogPanel: ILogService 未注入，日志面板将无法工作。");
                 return;
             }
 
-            subscription = logService.LogStream
+            _subscription = _logService.LogStream
                 .Subscribe(OnLogReceived);
         }
 
         private void OnDestroy()
         {
-            subscription?.Dispose();
+            _subscription?.Dispose();
         }
 
         private void Update()
         {
-            if (Input.GetKeyDown(toggleKey))
+            if (Input.GetKeyDown(_toggleKey))
             {
                 gameObject.SetActive(!gameObject.activeSelf);
             }
@@ -99,7 +99,7 @@ namespace Core.Feature.Logging.Runtime
         private void OnLogReceived(LogEntry entry)
         {
             // 等级过滤
-            if (entry.Level < minimumLevelFilter)
+            if (entry.Level < _minimumLevelFilter)
             {
                 return;
             }
@@ -110,13 +110,13 @@ namespace Core.Feature.Logging.Runtime
                 return;
             }
 
-            entries.Add(entry);
+            _entries.Add(entry);
 
             // 控制最大条数
-            if (entries.Count > maxEntryCount)
+            if (_entries.Count > _maxEntryCount)
             {
-                var overflow = entries.Count - maxEntryCount;
-                entries.RemoveRange(0, overflow);
+                var overflow = _entries.Count - _maxEntryCount;
+                _entries.RemoveRange(0, overflow);
             }
 
             RebuildText();
@@ -124,16 +124,16 @@ namespace Core.Feature.Logging.Runtime
 
         private bool IsCategoryEnabled(LogCategory category)
         {
-            if (enabledCategories == null || enabledCategories.Length == 0)
+            if (_enabledCategories == null || _enabledCategories.Length == 0)
             {
                 // 未配置分类过滤 → 视为全部启用
                 return true;
             }
 
-            var count = enabledCategories.Length;
+            var count = _enabledCategories.Length;
             for (var index = 0; index < count; index += 1)
             {
-                if (enabledCategories[index] == category)
+                if (_enabledCategories[index] == category)
                 {
                     return true;
                 }
@@ -144,20 +144,20 @@ namespace Core.Feature.Logging.Runtime
 
         private void RebuildText()
         {
-            if (textArea == null)
+            if (_textArea == null)
             {
                 return;
             }
 
-            SharedBuilder.Clear();
+            _sharedBuilder.Clear();
 
-            var count = entries.Count;
+            var count = _entries.Count;
             for (var index = 0; index < count; index += 1)
             {
-                SharedBuilder.AppendLine(entries[index].ToString());
+                _sharedBuilder.AppendLine(_entries[index].ToString());
             }
 
-            textArea.text = SharedBuilder.ToString();
+            _textArea.text = _sharedBuilder.ToString();
         }
     }
 }

@@ -13,10 +13,10 @@ namespace Core.Feature.AssetManagement.Runtime
     public sealed class AddressablesAssetProvider : IAssetProvider
     {
         // key -> Addressables 句柄缓存，便于重复加载时直接复用
-        private readonly Dictionary<string, AsyncOperationHandle> handleCache = new();
+        private readonly Dictionary<string, AsyncOperationHandle> _handleCache = new();
 
         // 记录通过 Addressables 动态实例化的对象，便于统一释放
-        private readonly HashSet<GameObject> spawnedInstances = new();
+        private readonly HashSet<GameObject> _spawnedInstances = new();
 
         // 异步加载资源（统一 entry point）：
         // - 先检查缓存：如果之前有人加载过，就沿用同一个句柄，避免重复发起 IO；
@@ -27,13 +27,13 @@ namespace Core.Feature.AssetManagement.Runtime
         {
             ct.ThrowIfCancellationRequested();
 
-            if (handleCache.TryGetValue(key, out var cachedHandle))
+            if (_handleCache.TryGetValue(key, out var cachedHandle))
             {
                 return await AwaitCachedHandle<T>(key, cachedHandle, ct);
             }
 
             var handle = Addressables.LoadAssetAsync<T>(key);
-            handleCache[key] = handle;
+            _handleCache[key] = handle;
             var registration = RegisterCancellation(key, handle, ct);
 
             try
@@ -42,7 +42,7 @@ namespace Core.Feature.AssetManagement.Runtime
             }
             catch
             {
-                handleCache.Remove(key);
+                _handleCache.Remove(key);
                 throw;
             }
             finally
@@ -51,7 +51,7 @@ namespace Core.Feature.AssetManagement.Runtime
 
                 if (handle.Status == AsyncOperationStatus.Failed)
                 {
-                    handleCache.Remove(key);
+                    _handleCache.Remove(key);
                 }
             }
         }
@@ -62,19 +62,19 @@ namespace Core.Feature.AssetManagement.Runtime
         // - 失败时必须移除缓存，下一次会重新加载。
         public T LoadAssetSync<T>(string key)
         {
-            if (handleCache.TryGetValue(key, out var cachedHandle))
+            if (_handleCache.TryGetValue(key, out var cachedHandle))
             {
                 return CompleteCachedHandle<T>(key, cachedHandle);
             }
 
             var handle = Addressables.LoadAssetAsync<T>(key);
-            handleCache[key] = handle;
+            _handleCache[key] = handle;
 
             handle.WaitForCompletion();
 
             if (handle.Status == AsyncOperationStatus.Failed)
             {
-                handleCache.Remove(key);
+                _handleCache.Remove(key);
                 return default;
             }
 
@@ -90,7 +90,7 @@ namespace Core.Feature.AssetManagement.Runtime
             foreach (var key in keys)
             {
                 if (ct.IsCancellationRequested) break;
-                if (handleCache.ContainsKey(key)) continue;
+                if (_handleCache.ContainsKey(key)) continue;
                 await LoadAssetAsync<object>(key, ct);
             }
         }
@@ -109,26 +109,26 @@ namespace Core.Feature.AssetManagement.Runtime
                 using (ct.Register(() => Addressables.Release(handle)))
                 {
                     var instance = await handle.Task;
-                    spawnedInstances.Add(instance);
+                    _spawnedInstances.Add(instance);
                     return instance;
                 }
             }
 
             var go = await handle.Task;
-            spawnedInstances.Add(go);
+            _spawnedInstances.Add(go);
             return go;
         }
 
         // 主动释放缓存句柄：适合加载-使用-卸载的生命周期，释放后下一次会重新加载。
         public void Release(string key)
         {
-            if (!handleCache.TryGetValue(key, out var handle))
+            if (!_handleCache.TryGetValue(key, out var handle))
             {
                 return;
             }
 
             Addressables.Release(handle);
-            handleCache.Remove(key);
+            _handleCache.Remove(key);
         }
 
         // 释放实例：如果我们有记录，按正常路径 ReleaseInstance；
@@ -141,7 +141,7 @@ namespace Core.Feature.AssetManagement.Runtime
                 return;
             }
 
-            if (spawnedInstances.Remove(instance))
+            if (_spawnedInstances.Remove(instance))
             {
                 Addressables.ReleaseInstance(instance);
             }
@@ -155,19 +155,19 @@ namespace Core.Feature.AssetManagement.Runtime
         // 一键清理：释放所有缓存句柄和所有实例，常用于场景退出 / 关卡切换。
         public void Clear()
         {
-            foreach (var kv in handleCache)
+            foreach (var kv in _handleCache)
             {
                 Addressables.Release(kv.Value);
             }
 
-            handleCache.Clear();
+            _handleCache.Clear();
 
-            foreach (var instance in spawnedInstances)
+            foreach (var instance in _spawnedInstances)
             {
                 Addressables.ReleaseInstance(instance);
             }
 
-            spawnedInstances.Clear();
+            _spawnedInstances.Clear();
         }
 
         // 给“正在加载”的句柄挂取消回调：
@@ -190,7 +190,7 @@ namespace Core.Feature.AssetManagement.Runtime
                 }
 
                 Addressables.Release(handle);
-                handleCache.Remove(key);
+                _handleCache.Remove(key);
             });
         }
 
@@ -214,7 +214,7 @@ namespace Core.Feature.AssetManagement.Runtime
             {
                 if (cachedHandle.Status == AsyncOperationStatus.Failed)
                 {
-                    handleCache.Remove(key);
+                    _handleCache.Remove(key);
                 }
             }
         }
@@ -226,7 +226,7 @@ namespace Core.Feature.AssetManagement.Runtime
 
             if (cachedHandle.Status == AsyncOperationStatus.Failed)
             {
-                handleCache.Remove(key);
+                _handleCache.Remove(key);
                 return default;
             }
 

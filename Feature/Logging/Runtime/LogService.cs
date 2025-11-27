@@ -16,27 +16,27 @@ namespace Core.Feature.Logging.Runtime
         /// <summary>
         /// 存储所有日志接收器的列表
         /// </summary>
-        private readonly IList<ILogSink> logSinks;
+        private readonly IList<ILogSink> _logSinks;
         
         /// <summary>
         /// 用于广播日志条目的Reactive Subject
         /// </summary>
-        private readonly Subject<LogEntry> subject;
+        private readonly Subject<LogEntry> _subject;
         
         /// <summary>
         /// 全局最小日志等级，低于此等级的日志将被过滤
         /// </summary>
-        private readonly LogLevel globalMinimumLevel;
+        private readonly LogLevel _globalMinimumLevel;
         
         /// <summary>
         /// 按日志类别存储的特定规则字典
         /// </summary>
-        private readonly Dictionary<LogCategory, CategoryRule> categoryRules;
+        private readonly Dictionary<LogCategory, CategoryRule> _categoryRules;
 
         /// <summary>
         /// 获取可观察的日志流，允许订阅所有日志条目
         /// </summary>
-        public Observable<LogEntry> LogStream => subject;
+        public Observable<LogEntry> LogStream => _subject;
 
         /// <summary>
         /// 初始化LogService实例
@@ -47,14 +47,14 @@ namespace Core.Feature.Logging.Runtime
             IEnumerable<ILogSink> sinks,
             LoggingConfig config)
         {
-            logSinks = new List<ILogSink>(sinks ?? Array.Empty<ILogSink>());
-            subject = new Subject<LogEntry>();
+            _logSinks = new List<ILogSink>(sinks ?? Array.Empty<ILogSink>());
+            _subject = new Subject<LogEntry>();
 
-            globalMinimumLevel = config != null
+            _globalMinimumLevel = config != null
                 ? config.minimumLogLevel
                 : LogLevel.Debug;
 
-            categoryRules = BuildCategoryRules(config);
+            _categoryRules = BuildCategoryRules(config);
         }
 
         /// <summary>
@@ -161,13 +161,13 @@ namespace Core.Feature.Logging.Runtime
             int callerLineNumber = 0)
         {
             // 全局等级过滤
-            if (level < globalMinimumLevel)
+            if (level < _globalMinimumLevel)
             {
                 return;
             }
 
             // 分类规则过滤（如果有）
-            if (categoryRules.TryGetValue(category, out var rule))
+            if (_categoryRules.TryGetValue(category, out var rule))
             {
                 if (!rule.Enabled || level < rule.MinimumLevel)
                 {
@@ -186,13 +186,13 @@ namespace Core.Feature.Logging.Runtime
                 callerLineNumber);
 
             // 广播日志条目到可观察流
-            subject.OnNext(entry);
+            _subject.OnNext(entry);
 
             // 将日志条目分发到所有注册的接收器
-            var count = logSinks.Count;
+            var count = _logSinks.Count;
             for (var index = 0; index < count; index += 1)
             {
-                logSinks[index].Write(entry);
+                _logSinks[index].Write(entry);
             }
         }
 
@@ -257,8 +257,8 @@ namespace Core.Feature.Logging.Runtime
         /// </summary>
         public void Dispose()
         {
-            subject?.OnCompleted();
-            subject?.Dispose();
+            _subject?.OnCompleted();
+            _subject?.Dispose();
         }
     }
 }
