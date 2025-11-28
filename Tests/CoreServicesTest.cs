@@ -22,11 +22,11 @@ namespace Core.Tests
             if (_logService != null)
             {
                 _logService.Information(
-                    LogCategory.System,
+                    LogCategory.Core,
                     "✅ CoreServicesTest: ILogService 注入成功！");
 
                 _logService.Debug(
-                    LogCategory.System,
+                    LogCategory.Core,
                     $"✅ IAssetProvider 注入成功：{_assetProvider != null}");
             }
             else

@@ -1,6 +1,12 @@
 using Core.Feature.AssetManagement.Runtime;
 using Core.Feature.Logging.Abstractions;
 using Core.Feature.Logging.Runtime;
+using Core.Feature.Logging.ScriptableObjects;
+using Core.Feature.SceneManagement.Abstractions;
+using Core.Feature.SceneManagement.Runtime;
+using UnityEngine;
+using UnityEngine.AddressableAssets;
+using UnityEngine.ResourceManagement.AsyncOperations;
 using VContainer;
 using VContainer.Unity;
 
@@ -26,7 +32,26 @@ namespace Core.Bootstrap
         protected override void Configure(IContainerBuilder builder)
         {
             // ========================================
-            // 已注册的基础设施服务
+            // 0. 初始化 Addressables 并加载核心配置
+            // ========================================
+            // 注意：为了满足依赖注入（LogService 需要 LoggingConfig），我们需要在 Configure 阶段同步加载配置。
+            // 虽然 Addressables 是异步的，但在启动阶段使用 WaitForCompletion 是可接受的权衡。
+
+            var configLoadHandle = Addressables.LoadAssetAsync<LoggingConfig>("LoggingConfig");
+            var loggingConfig = configLoadHandle.WaitForCompletion();
+
+            if (configLoadHandle.Status == AsyncOperationStatus.Succeeded && loggingConfig != null)
+            {
+                builder.RegisterInstance(loggingConfig);
+            }
+            else
+            {
+                Debug.LogWarning("Failed to load 'LoggingConfig' via Addressables! Using default settings.");
+                builder.RegisterInstance(ScriptableObject.CreateInstance<LoggingConfig>());
+            }
+
+            // ========================================
+            // 1. 注册基础设施服务
             // ========================================
 
             // 资源管理：Addressables 资源加载、缓存与释放
@@ -42,6 +67,17 @@ namespace Core.Bootstrap
             // 注册核心日志服务
             builder.Register<LogService>(Lifetime.Singleton)
                 .As<ILogService>();
+
+            // 场景管理：场景异步加载与卸载、加载进度追踪
+            // 用途：统一的场景加载入口，支持 Addressables 场景管理
+            builder.Register<SceneService>(Lifetime.Singleton)
+                .As<ISceneService>();
+
+            // ========================================
+            // 核心服务初始化器
+            // ========================================
+            // 在所有服务注册完成后，注册启动器来初始化这些服务
+            builder.RegisterEntryPoint<CoreBootstrapper>();
 
 
             // ========================================
@@ -109,6 +145,8 @@ namespace Core.Bootstrap
             // 2. 避免在 Core 层注册游戏业务逻辑相关的服务
             // 3. 优先使用接口注册，便于测试和替换实现
             // 4. 考虑服务之间的依赖关系，必要时使用工厂模式
+
+            //
         }
     }
 }
