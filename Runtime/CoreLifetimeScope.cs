@@ -31,7 +31,8 @@ namespace Core.Bootstrap
 
             // 资源管理：Addressables 资源加载、缓存与释放
             // 用途：统一的资源加载入口，支持异步加载、预加载、实例化等
-            builder.Register<IAssetProvider, AddressablesAssetProvider>(Lifetime.Singleton);
+            builder.Register<AddressablesAssetProvider>(Lifetime.Singleton)
+                .As<IAssetProvider>();
 
             // 日志系统：日志记录、过滤、分发
             // 注册日志输出接收器（Unity 控制台）
