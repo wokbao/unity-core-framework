@@ -46,7 +46,7 @@ namespace Core.Bootstrap
             }
             else
             {
-                Debug.LogWarning("Failed to load 'LoggingConfig' via Addressables! Using default settings.");
+                Debug.LogWarning("Addressables 加载 'LoggingConfig' 失败！使用默认设置。");
                 builder.RegisterInstance(ScriptableObject.CreateInstance<LoggingConfig>());
             }
 

@@ -42,7 +42,7 @@ namespace Core.Feature.SceneManagement.Runtime
                 // 使用 Addressables 加载场景
                 // LoadSceneMode.Single 会自动卸载当前非 DontDestroyOnLoad 的场景
                 var handle = Addressables.LoadSceneAsync(sceneKey, LoadSceneMode.Single);
-                
+
                 // 进度追踪
                 await handle.ToUniTask(progress: progress);
 
@@ -55,7 +55,7 @@ namespace Core.Feature.SceneManagement.Runtime
                 else
                 {
                     _logService.Error(LogCategory.Core, $"场景加载失败: {sceneKey}");
-                    throw new Exception($"Failed to load scene: {sceneKey}");
+                    throw new Exception($"场景加载失败: {sceneKey}");
                 }
             }
             catch (Exception e)
