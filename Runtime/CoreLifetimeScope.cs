@@ -1,12 +1,10 @@
 using Core.Feature.AssetManagement.Runtime;
 using Core.Feature.Logging.Abstractions;
 using Core.Feature.Logging.Runtime;
-using Core.Feature.Logging.ScriptableObjects;
 using Core.Feature.SceneManagement.Abstractions;
 using Core.Feature.SceneManagement.Runtime;
+using Core.Runtime.Configuration;
 using UnityEngine;
-using UnityEngine.AddressableAssets;
-using UnityEngine.ResourceManagement.AsyncOperations;
 using VContainer;
 using VContainer.Unity;
 
@@ -26,33 +24,60 @@ namespace Core.Bootstrap
     /// <para><b>与其他 LifetimeScope 的关系</b>：</para>
     /// 通过 Unity Inspector 配置，作为 GameLifetimeScope 的父容器，
     /// 使得游戏层和场景层可以访问所有基础设施服务。
+    /// 
+    /// <para><b>配置管理</b>：</para>
+    /// <list type="bullet">
+    ///   <item>使用 ConfigManifest 统一管理所有核心配置</item>
+    ///   <item>配置在服务注册前完成加载和验证</item>
+    ///   <item>添加新配置无需修改代码，仅需在清单中配置</item>
+    /// </list>
     /// </summary>
     public sealed class CoreLifetimeScope : LifetimeScope
     {
+        [Header("核心配置")]
+        [SerializeField]
+        [Tooltip("核心配置清单，定义所有需要在启动时加载的基础设施配置")]
+        private ConfigManifest _coreConfigManifest;
+
         protected override void Configure(IContainerBuilder builder)
         {
             // ========================================
-            // 0. 初始化 Addressables 并加载核心配置
+            // 0. 加载并注册所有核心配置（同步阻塞）
             // ========================================
-            // 注意：为了满足依赖注入（LogService 需要 LoggingConfig），我们需要在 Configure 阶段同步加载配置。
-            // 虽然 Addressables 是异步的，但在启动阶段使用 WaitForCompletion 是可接受的权衡。
+            // 说明：
+            // 1. ConfigLoader 内部使用 Addressables.LoadAssetAsync().WaitForCompletion()
+            // 2. WaitForCompletion() 会阻塞当前线程，直到配置完全加载完成
+            // 3. 虽然是阻塞的，但配置文件很小（几KB），加载时间可忽略（~1-5ms）
+            // 4. 配置必须在服务注册之前完成，因为服务依赖配置（如 LogService 需要 LoggingConfig）
+            // 5. 这种同步加载方式是合理的权衡：简单、可靠、性能影响小
 
-            var configLoadHandle = Addressables.LoadAssetAsync<LoggingConfig>("LoggingConfig");
-            var loggingConfig = configLoadHandle.WaitForCompletion();
+            ConfigLoadResult configResult = null;
 
-            if (configLoadHandle.Status == AsyncOperationStatus.Succeeded && loggingConfig != null)
+            if (_coreConfigManifest != null)
             {
-                builder.RegisterInstance(loggingConfig);
+                // 加载配置清单中定义的所有配置
+                // 当前：LoggingConfig
+                // 未来：ObjectPoolConfig, EventBusConfig 等（仅需在清单中添加，无需修改代码）
+                configResult = ConfigLoader.LoadFromManifest(_coreConfigManifest);
+
+                // 将加载的配置注册到 DI 容器
+                // 使配置可以通过构造函数注入到服务中
+                ConfigRegistry.RegisterToContainer(builder, configResult);
+
+                // 执行到这里时，所有配置已经：
+                // ✓ 从 Addressables 加载完成
+                // ✓ 注册到 DI 容器
+                // ✓ 可以被后续的服务注入使用
             }
             else
             {
-                Debug.LogWarning("Addressables 加载 'LoggingConfig' 失败！使用默认设置。");
-                builder.RegisterInstance(ScriptableObject.CreateInstance<LoggingConfig>());
+                Debug.LogWarning("[CoreLifetimeScope] 未设置核心配置清单，跳过配置加载");
             }
 
             // ========================================
             // 1. 注册基础设施服务
             // ========================================
+            // 重要：所有配置已在上面加载完成，现在可以安全注册依赖配置的服务
 
             // 日志系统：日志记录、过滤、分发
             // 注册日志输出接收器（Unity 控制台）
@@ -60,6 +85,7 @@ namespace Core.Bootstrap
                 .As<ILogSink>();
 
             // 注册核心日志服务
+            // 依赖：LoggingConfig（已在步骤 0 中加载并注册）
             builder.Register<LogService>(Lifetime.Singleton)
                 .As<ILogService>();
 
@@ -71,16 +97,17 @@ namespace Core.Bootstrap
 
             // 场景管理：场景异步加载与卸载、加载进度追踪
             // 用途：统一的场景加载入口，支持 Addressables 场景管理
+            // 依赖：ILogService（用于记录场景加载日志）
             builder.Register<SceneService>(Lifetime.Singleton)
                 .As<ISceneService>();
 
             // ========================================
-            // 核心服务初始化器
+            // 2. 核心服务初始化器
             // ========================================
             // 在所有服务注册完成后，注册启动器来初始化这些服务
+            // CoreBootstrapper 会在容器构建完成后自动执行 Start() 方法
+            // 依赖：所有上面注册的服务
             builder.RegisterEntryPoint<CoreBootstrapper>();
-
-
             // ========================================
             // TODO: 待补充的基础设施服务
             // ========================================
