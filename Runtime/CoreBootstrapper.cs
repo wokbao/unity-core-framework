@@ -6,7 +6,53 @@ namespace Core.Bootstrap
 {
     /// <summary>
     /// Core 层服务初始化器
-    /// 负责在应用启动时按正确顺序初始化所有核心服务
+    /// 
+    /// <para><b>职责</b>：</para>
+    /// <list type="bullet">
+    ///   <item>在应用启动时按正确顺序初始化所有核心服务</item>
+    ///   <item>记录服务初始化过程的日志</item>
+    ///   <item>为未来服务添加预留初始化接口</item>
+    /// </list>
+    /// 
+    /// <para><b>工作原理</b>：</para>
+    /// <list type="number">
+    ///   <item>VContainer 在容器构建完成后自动调用 Start() 方法</item>
+    ///   <item>所有依赖的服务通过构造函数自动注入</item>
+    ///   <item>按顺序执行各服务的初始化方法</item>
+    ///   <item>记录初始化开始和完成的日志</item>
+    /// </list>
+    /// 
+    /// <para><b>扩展方式</b>：</para>
+    /// 当添加新的核心服务时：
+    /// <code>
+    /// 1. 在构造函数中注入新服务
+    /// public CoreBootstrapper(
+    ///     ILogService logService,
+    ///     ISceneService sceneService,
+    ///     IObjectPoolManager objectPoolManager) // 新增
+    /// { ... }
+    /// 
+    /// 2. 在 Start() 方法中调用初始化
+    /// public void Start()
+    /// {
+    ///     // ...
+    ///     InitializeObjectPoolService();
+    /// }
+    /// 
+    /// 3. 添加初始化方法
+    /// private void InitializeObjectPoolService()
+    /// {
+    ///     _logService.Information(LogCategory.Core, "初始化对象池服务...");
+    ///     // 执行初始化逻辑
+    /// }
+    /// </code>
+    /// 
+    /// <para><b>注意事项</b>：</para>
+    /// <list type="bullet">
+    ///   <item>此类必须通过 RegisterEntryPoint 注册到 CoreLifetimeScope</item>
+    ///   <item>初始化顺序很重要，确保服务依赖关系正确</item>
+    ///   <item>某些服务可能不需要额外初始化（如日志服务）</item>
+    /// </list>
     /// </summary>
     public sealed class CoreBootstrapper : IStartable
     {

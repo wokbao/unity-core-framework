@@ -54,11 +54,6 @@ namespace Core.Bootstrap
             // 1. 注册基础设施服务
             // ========================================
 
-            // 资源管理：Addressables 资源加载、缓存与释放
-            // 用途：统一的资源加载入口，支持异步加载、预加载、实例化等
-            builder.Register<AddressablesAssetProvider>(Lifetime.Singleton)
-                .As<IAssetProvider>();
-
             // 日志系统：日志记录、过滤、分发
             // 注册日志输出接收器（Unity 控制台）
             builder.Register<UnityLogSink>(Lifetime.Singleton)
@@ -67,6 +62,12 @@ namespace Core.Bootstrap
             // 注册核心日志服务
             builder.Register<LogService>(Lifetime.Singleton)
                 .As<ILogService>();
+
+            // 资源管理：Addressables 资源加载、缓存与释放
+            // 用途：统一的资源加载入口，支持异步加载、预加载、实例化等
+            // 依赖：ILogService（用于记录资源加载日志）
+            builder.Register<AddressablesAssetProvider>(Lifetime.Singleton)
+                .As<IAssetProvider>();
 
             // 场景管理：场景异步加载与卸载、加载进度追踪
             // 用途：统一的场景加载入口，支持 Addressables 场景管理

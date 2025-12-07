@@ -11,6 +11,41 @@ using UnityEngine.SceneManagement;
 
 namespace Core.Feature.SceneManagement.Runtime
 {
+    /// <summary>
+    /// 场景管理服务的默认实现
+    /// 
+    /// <para><b>职责</b>：</para>
+    /// <list type="bullet">
+    ///   <item>通过 Addressables 异步加载和卸载场景</item>
+    ///   <item>追踪场景加载进度并支持进度回调</item>
+    ///   <item>管理当前场景的引用和生命周期</item>
+    ///   <item>记录场景加载过程的日志</item>
+    /// </list>
+    /// 
+    /// <para><b>设计模式</b>：</para>
+    /// <list type="bullet">
+    ///   <item>单场景模式（Single Scene Architecture）：每次只保留一个主场景</item>
+    ///   <item>加载新场景时自动卸载旧场景</item>
+    ///   <item>使用 UniTask 提供流畅的异步体验</item>
+    /// </list>
+    /// 
+    /// <para><b>使用示例</b>：</para>
+    /// <code>
+    /// // 简单加载
+    /// await _sceneService.LoadSceneAsync("MainMenu");
+    /// 
+    /// // 带进度追踪的加载
+    /// var progress = new Progress&lt;float&gt;(p => Debug.Log($"加载进度: {p * 100}%"));
+    /// await _sceneService.LoadSceneAsync("Gameplay", useLoadingScreen: true, progress);
+    /// </code>
+    /// 
+    /// <para><b>注意事项</b>：</para>
+    /// <list type="bullet">
+    ///   <item>场景资源必须通过 Addressables 管理并设置正确的 Key</item>
+    ///   <item>加载模式为 LoadSceneMode.Single，会自动卸载非 DontDestroyOnLoad 的场景</item>
+    ///   <item>暂不支持叠加场景（Additive Scene）功能</item>
+    /// </list>
+    /// </summary>
     public sealed class SceneService : ISceneService, IDisposable
     {
         public string CurrentSceneKey { get; private set; }

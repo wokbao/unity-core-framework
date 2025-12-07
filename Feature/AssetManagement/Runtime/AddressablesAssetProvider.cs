@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Threading;
+using Core.Feature.Logging.Abstractions;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.AddressableAssets;
@@ -12,11 +13,18 @@ namespace Core.Feature.AssetManagement.Runtime
     /// </summary>
     public sealed class AddressablesAssetProvider : IAssetProvider
     {
+        private readonly ILogService _logService;
+
         // key -> Addressables 句柄缓存，便于重复加载时直接复用
         private readonly Dictionary<string, AsyncOperationHandle> _handleCache = new();
 
         // 记录通过 Addressables 动态实例化的对象，便于统一释放
         private readonly HashSet<GameObject> _spawnedInstances = new();
+
+        public AddressablesAssetProvider(ILogService logService)
+        {
+            _logService = logService;
+        }
 
         // 异步加载资源（统一 entry point）：
         // - 先检查缓存：如果之前有人加载过，就沿用同一个句柄，避免重复发起 IO；
@@ -29,19 +37,24 @@ namespace Core.Feature.AssetManagement.Runtime
 
             if (_handleCache.TryGetValue(key, out var cachedHandle))
             {
+                _logService.Debug(LogCategory.Core, $"资源已缓存，复用句柄: {key}");
                 return await AwaitCachedHandle<T>(key, cachedHandle, ct);
             }
 
+            _logService.Information(LogCategory.Core, $"开始加载资源: {key}");
             var handle = Addressables.LoadAssetAsync<T>(key);
             _handleCache[key] = handle;
             var registration = RegisterCancellation(key, handle, ct);
 
             try
             {
-                return await handle.Task;
+                var result = await handle.Task;
+                _logService.Information(LogCategory.Core, $"资源加载成功: {key}");
+                return result;
             }
-            catch
+            catch (System.Exception ex)
             {
+                _logService.Error(LogCategory.Core, $"资源加载失败: {key}", ex);
                 _handleCache.Remove(key);
                 throw;
             }
@@ -101,6 +114,7 @@ namespace Core.Feature.AssetManagement.Runtime
         public async UniTask<GameObject> InstantiateAsync(string key, Transform parent = null, bool worldSpace = false,
             CancellationToken ct = default)
         {
+            _logService.Debug(LogCategory.Core, $"开始实例化预制体: {key}");
             // Addressables.InstantiateAsync 自带引用计数，这里只负责记录实例用于释放
             var handle = Addressables.InstantiateAsync(key, parent, worldSpace);
 
@@ -110,12 +124,14 @@ namespace Core.Feature.AssetManagement.Runtime
                 {
                     var instance = await handle.Task;
                     _spawnedInstances.Add(instance);
+                    _logService.Debug(LogCategory.Core, $"预制体实例化成功: {key} (实例: {instance.name})");
                     return instance;
                 }
             }
 
             var go = await handle.Task;
             _spawnedInstances.Add(go);
+            _logService.Debug(LogCategory.Core, $"预制体实例化成功: {key} (实例: {go.name})");
             return go;
         }
 
@@ -127,6 +143,7 @@ namespace Core.Feature.AssetManagement.Runtime
                 return;
             }
 
+            _logService.Debug(LogCategory.Core, $"释放资源: {key}");
             Addressables.Release(handle);
             _handleCache.Remove(key);
         }
@@ -155,6 +172,8 @@ namespace Core.Feature.AssetManagement.Runtime
         // 一键清理：释放所有缓存句柄和所有实例，常用于场景退出 / 关卡切换。
         public void Clear()
         {
+            _logService.Information(LogCategory.Core, $"清理所有资源缓存 (缓存数: {_handleCache.Count}, 实例数: {_spawnedInstances.Count})");
+
             foreach (var kv in _handleCache)
             {
                 Addressables.Release(kv.Value);
