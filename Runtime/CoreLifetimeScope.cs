@@ -1,4 +1,6 @@
 using Core.Feature.AssetManagement.Runtime;
+using Core.Feature.Loading.Abstractions;
+using Core.Feature.Loading.Runtime;
 using Core.Feature.Logging.Abstractions;
 using Core.Feature.Logging.Runtime;
 using Core.Feature.SceneManagement.Abstractions;
@@ -88,6 +90,10 @@ namespace Core.Bootstrap
             // 依赖：LoggingConfig（已在步骤 0 中加载并注册）
             builder.Register<LogService>(Lifetime.Singleton)
                 .As<ILogService>();
+
+            // 加载系统：统一加载状态/进度上报（支持嵌套计数）
+            builder.Register<LoadingService>(Lifetime.Singleton)
+                .As<ILoadingService>();
 
             // 资源管理：Addressables 资源加载、缓存与释放
             // 用途：统一的资源加载入口，支持异步加载、预加载、实例化等
