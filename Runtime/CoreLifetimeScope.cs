@@ -9,6 +9,7 @@ using Core.Feature.SceneManagement.Abstractions;
 using Core.Feature.SceneManagement.Runtime;
 using Core.Feature.EventBus.Abstractions;
 using Core.Feature.EventBus.Runtime;
+using Core.Runtime.Startup;
 using Core.Runtime.Configuration;
 using UnityEngine;
 using VContainer;
@@ -69,6 +70,7 @@ namespace Core.Bootstrap
 
             // 2. 核心服务初始化器
             builder.RegisterEntryPoint<CoreBootstrapper>();
+            builder.RegisterEntryPoint<StartupRunner>();
         }
     }
 }
