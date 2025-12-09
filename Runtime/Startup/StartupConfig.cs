@@ -10,8 +10,7 @@ namespace Core.Runtime.Startup
         [Tooltip("首个业务场景的 Addressables Key，例如 Game_Menu_Main")]
         public string firstSceneKey = "Game_Menu_Main";
 
-        [Tooltip("加载首个场景时是否显示 Loading UI")]
-        public bool useLoadingScreen = true;
+        [Tooltip("加载首个场景时是否显示 Loading UI")] public bool useLoadingScreen = true;
 
         public bool Validate(out List<string> errors)
         {

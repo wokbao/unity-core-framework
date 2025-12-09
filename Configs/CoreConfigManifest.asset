@@ -20,5 +20,12 @@ MonoBehaviour:
     Priority: 0
     DevOnly: 0
     ProductionOnly: 0
+  - Name: StartupConfig
+    AddressableKey: Core/Configs/StartupConfig
+    ConfigTypeName: Core.Runtime.Startup.StartupConfig
+    IsRequired: 1
+    Priority: 0
+    DevOnly: 0
+    ProductionOnly: 0
   BlockOnFailure: 0
   EnableValidation: 1

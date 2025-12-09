@@ -22,9 +22,7 @@ namespace Core.Bootstrap
     /// </summary>
     public sealed class CoreLifetimeScope : LifetimeScope
     {
-        [Header("核心配置")]
-        [SerializeField]
-        [Tooltip("核心配置清单，定义启动时需要加载的基础设施配置")]
+        [Header("核心配置")] [SerializeField] [Tooltip("核心配置清单，定义启动时需要加载的基础设施配置")]
         private ConfigManifest _coreConfigManifest;
 
         protected override void Configure(IContainerBuilder builder)
