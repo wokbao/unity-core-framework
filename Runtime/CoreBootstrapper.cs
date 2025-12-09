@@ -1,5 +1,6 @@
 using Core.Feature.Logging.Abstractions;
 using Core.Feature.ObjectPooling.Abstractions;
+using Core.Feature.EventBus.Abstractions;
 using Core.Feature.SceneManagement.Abstractions;
 using VContainer.Unity;
 
@@ -60,15 +61,18 @@ namespace Core.Bootstrap
         private readonly ILogService _logService;
         private readonly ISceneService _sceneService;
         private readonly IObjectPoolManager _objectPoolManager;
+        private readonly IEventBus _eventBus;
 
         public CoreBootstrapper(
             ILogService logService,
             ISceneService sceneService,
-            IObjectPoolManager objectPoolManager)
+            IObjectPoolManager objectPoolManager,
+            IEventBus eventBus)
         {
             _logService = logService;
             _sceneService = sceneService;
             _objectPoolManager = objectPoolManager;
+            _eventBus = eventBus;
         }
 
         public void Start()
@@ -83,6 +87,9 @@ namespace Core.Bootstrap
 
             // 初始化对象池
             InitializeObjectPoolService();
+
+            // 初始化事件总线
+            InitializeEventBusService();
 
             // TODO: 初始化其他服务
             // InitializeConfigService();
@@ -114,6 +121,18 @@ namespace Core.Bootstrap
 
             _logService.Information(LogCategory.Core, "初始化对象池服务...");
             // 当前无额外初始化逻辑，预留预热/配置入口
+        }
+
+        private void InitializeEventBusService()
+        {
+            if (_eventBus == null)
+            {
+                _logService.Error(LogCategory.Core, "事件总线未注入，跳过初始化");
+                return;
+            }
+
+            _logService.Information(LogCategory.Core, "初始化事件总线...");
+            // 当前无额外初始化逻辑，预留注册全局订阅入口
         }
     }
 }

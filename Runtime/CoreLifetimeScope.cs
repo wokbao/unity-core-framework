@@ -7,6 +7,8 @@ using Core.Feature.ObjectPooling.Abstractions;
 using Core.Feature.ObjectPooling.Runtime;
 using Core.Feature.SceneManagement.Abstractions;
 using Core.Feature.SceneManagement.Runtime;
+using Core.Feature.EventBus.Abstractions;
+using Core.Feature.EventBus.Runtime;
 using Core.Runtime.Configuration;
 using UnityEngine;
 using VContainer;
@@ -48,6 +50,10 @@ namespace Core.Bootstrap
             // 对象池
             builder.Register<ObjectPoolManager>(Lifetime.Singleton)
                 .As<IObjectPoolManager>();
+
+            // 事件总线
+            builder.Register<EventBus>(Lifetime.Singleton)
+                .As<IEventBus>();
 
             // 加载状态
             builder.Register<LoadingService>(Lifetime.Singleton)
