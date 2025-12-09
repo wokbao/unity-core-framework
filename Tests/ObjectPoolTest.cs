@@ -1,5 +1,6 @@
 using Core.Feature.ObjectPooling.Abstractions;
 using UnityEngine;
+using VContainer;
 
 namespace Core.Tests
 {
@@ -11,8 +12,7 @@ namespace Core.Tests
     {
         [SerializeField] private GameObject _prefab;
 
-        [Inject]
-        private IObjectPoolManager _poolManager;
+        [Inject] private IObjectPoolManager _poolManager;
 
         private void Start()
         {

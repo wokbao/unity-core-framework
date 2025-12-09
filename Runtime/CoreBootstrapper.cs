@@ -1,4 +1,5 @@
 using Core.Feature.Logging.Abstractions;
+using Core.Feature.ObjectPooling.Abstractions;
 using Core.Feature.SceneManagement.Abstractions;
 using VContainer.Unity;
 
@@ -58,13 +59,16 @@ namespace Core.Bootstrap
     {
         private readonly ILogService _logService;
         private readonly ISceneService _sceneService;
+        private readonly IObjectPoolManager _objectPoolManager;
 
         public CoreBootstrapper(
             ILogService logService,
-            ISceneService sceneService)
+            ISceneService sceneService,
+            IObjectPoolManager objectPoolManager)
         {
             _logService = logService;
             _sceneService = sceneService;
+            _objectPoolManager = objectPoolManager;
         }
 
         public void Start()
@@ -77,8 +81,10 @@ namespace Core.Bootstrap
             // 初始化场景服务
             InitializeSceneService();
 
+            // 初始化对象池
+            InitializeObjectPoolService();
+
             // TODO: 初始化其他服务
-            // InitializeObjectPoolService();
             // InitializeConfigService();
             // InitializeEventBusService();
 
@@ -96,6 +102,18 @@ namespace Core.Bootstrap
             _logService.Information(LogCategory.Core, "初始化场景服务...");
             // 场景服务也不需要额外初始化
             // 如果未来需要预加载某些场景，可以在这里处理
+        }
+
+        private void InitializeObjectPoolService()
+        {
+            if (_objectPoolManager == null)
+            {
+                _logService.Error(LogCategory.Core, "对象池服务未注入，跳过初始化");
+                return;
+            }
+
+            _logService.Information(LogCategory.Core, "初始化对象池服务...");
+            // 当前无额外初始化逻辑，预留预热/配置入口
         }
     }
 }
