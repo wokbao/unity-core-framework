@@ -64,6 +64,10 @@ namespace Core.Bootstrap
 
             // 场景管理
             builder.Register<SceneFadeTransition>(Lifetime.Singleton)
+                .WithParameter("fadeOutDuration", 0.35f)
+                .WithParameter("fadeInDuration", 0.3f)
+                .WithParameter("overlayColor", new Color(0f, 0f, 0f, 0.95f))
+                .WithParameter("sortingOrder", 8000)
                 .As<ISceneTransition>();
             builder.Register<SceneService>(Lifetime.Singleton)
                 .As<ISceneService>();
