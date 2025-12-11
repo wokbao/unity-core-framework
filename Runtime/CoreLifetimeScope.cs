@@ -25,6 +25,9 @@ namespace Core.Bootstrap
         [Header("核心配置")] [SerializeField] [Tooltip("核心配置清单，定义启动时需要加载的基础设施配置")]
         private ConfigManifest _coreConfigManifest;
 
+        [Header("场景过渡配置")] [SerializeField] [Tooltip("可选：配置过渡开关、方案与参数；为空则使用默认配置")]
+        private SceneTransitionConfig _sceneTransitionConfig;
+
         protected override void Configure(IContainerBuilder builder)
         {
             // 0. 加载并注册所有核心配置（同步阻塞）
@@ -63,27 +66,37 @@ namespace Core.Bootstrap
                 .As<IAssetProvider>();
 
             // 场景管理
-            // 说明：保留两种过渡方案，默认启用影院式黑条方案；如需纯黑场淡入淡出，注释掉下行注册，启用下方 SceneFadeTransition 注册。
-            // 差异与扩展建议：
-            // - SceneCinematicTransition：上下黑条闭合 + 叠加淡入淡出，观感更“电影化”，无需美术资源即可用；可替换条高、速度、遮罩色，或换成自定义遮罩纹理。
-            // - SceneFadeTransition（备用）：纯黑场淡入淡出，最简、无额外元素；可快速接入自定义遮罩贴图/噪点/光圈等素材，由美术替换 Image 颜色/材质即可。
-            // - 后续优化：可抽象 ISceneTransition 实现工厂，根据场景/平台选择不同过渡；可把参数配置化（ScriptableObject）给美术/策划调整。
-            builder.Register<SceneCinematicTransition>(Lifetime.Singleton)
-                .WithParameter("barHeightRatio", 0.18f)
-                .WithParameter("barCloseDuration", 0.35f)
-                .WithParameter("barOpenDuration", 0.3f)
-                .WithParameter("fadeOutDuration", 0.25f)
-                .WithParameter("fadeInDuration", 0.25f)
-                .WithParameter("overlayColor", new Color(0f, 0f, 0f, 0.95f))
-                .WithParameter("sortingOrder", 8000)
-                .As<ISceneTransition>();
-            // 备用方案：纯黑场淡入淡出。若需切换方案，注释上方 SceneCinematicTransition，取消下行注释。
-            // builder.Register<SceneFadeTransition>(Lifetime.Singleton)
-            //     .WithParameter("fadeOutDuration", 0.35f)
-            //     .WithParameter("fadeInDuration", 0.3f)
-            //     .WithParameter("overlayColor", new Color(0f, 0f, 0f, 0.95f))
-            //     .WithParameter("sortingOrder", 8000)
-            //     .As<ISceneTransition>();
+            var sceneTransitionConfig = _sceneTransitionConfig != null
+                ? _sceneTransitionConfig
+                : SceneTransitionConfig.Default;
+
+            if (!sceneTransitionConfig.enableTransition)
+            {
+                builder.Register<NoSceneTransition>(Lifetime.Singleton)
+                    .As<ISceneTransition>();
+            }
+            else if (sceneTransitionConfig.mode == SceneTransitionConfig.TransitionMode.Cinematic)
+            {
+                builder.Register<SceneCinematicTransition>(Lifetime.Singleton)
+                    .WithParameter("barHeightRatio", sceneTransitionConfig.barHeightRatio)
+                    .WithParameter("barCloseDuration", sceneTransitionConfig.barCloseDuration)
+                    .WithParameter("barOpenDuration", sceneTransitionConfig.barOpenDuration)
+                    .WithParameter("fadeOutDuration", sceneTransitionConfig.cinematicFadeOutDuration)
+                    .WithParameter("fadeInDuration", sceneTransitionConfig.cinematicFadeInDuration)
+                    .WithParameter("overlayColor", sceneTransitionConfig.OverlayColor)
+                    .WithParameter("sortingOrder", sceneTransitionConfig.sortingOrder)
+                    .As<ISceneTransition>();
+            }
+            else // Fade
+            {
+                builder.Register<SceneFadeTransition>(Lifetime.Singleton)
+                    .WithParameter("fadeOutDuration", sceneTransitionConfig.fadeOutDuration)
+                    .WithParameter("fadeInDuration", sceneTransitionConfig.fadeInDuration)
+                    .WithParameter("overlayColor", sceneTransitionConfig.OverlayColor)
+                    .WithParameter("sortingOrder", sceneTransitionConfig.sortingOrder)
+                    .As<ISceneTransition>();
+            }
+
             builder.Register<SceneService>(Lifetime.Singleton)
                 .As<ISceneService>();
 

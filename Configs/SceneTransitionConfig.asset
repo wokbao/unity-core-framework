@@ -1,0 +1,25 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ff38c1df0474b914a90eeec0fbc530f1, type: 3}
+  m_Name: SceneTransitionConfig
+  m_EditorClassIdentifier: 
+  enableTransition: 1
+  mode: 0
+  overlayAlpha: 0.95
+  sortingOrder: 8000
+  barHeightRatio: 0.18
+  barCloseDuration: 1
+  barOpenDuration: 1
+  cinematicFadeOutDuration: 0.8
+  cinematicFadeInDuration: 0.8
+  fadeOutDuration: 0.35
+  fadeInDuration: 0.3

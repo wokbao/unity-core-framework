@@ -157,6 +157,7 @@ MonoBehaviour:
   autoRun: 1
   autoInjectGameObjects: []
   _coreConfigManifest: {fileID: 11400000, guid: edd45a6f7917b4d00bb9d58ab7e9ff4e, type: 2}
+  _sceneTransitionConfig: {fileID: 11400000, guid: 39f2fa74c67e64843a91239289c9e6ab, type: 2}
 --- !u!4 &216443878
 Transform:
   m_ObjectHideFlags: 0

@@ -52,7 +52,7 @@ namespace Core.Feature.SceneManagement.Runtime
             canvas.sortingOrder = _sortingOrder;
 
             _canvasGroup = _root.GetComponent<CanvasGroup>();
-            _canvasGroup.alpha = 0f;
+            _canvasGroup.alpha = 1f; // 过渡始终可见，由内部条与遮罩控制实际透明度
             _canvasGroup.blocksRaycasts = false;
             _canvasGroup.interactable = false;
 
