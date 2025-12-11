@@ -63,6 +63,8 @@ namespace Core.Bootstrap
                 .As<IAssetProvider>();
 
             // 场景管理
+            builder.Register<SceneFadeTransition>(Lifetime.Singleton)
+                .As<ISceneTransition>();
             builder.Register<SceneService>(Lifetime.Singleton)
                 .As<ISceneService>();
 

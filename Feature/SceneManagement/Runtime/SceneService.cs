@@ -20,12 +20,17 @@ namespace Core.Feature.SceneManagement.Runtime
 
         private readonly ILogService _logService;
         private readonly ILoadingService _loadingService;
+        private readonly ISceneTransition _transition;
         private AsyncOperationHandle<SceneInstance> _currentSceneHandle;
 
-        public SceneService(ILogService logService, ILoadingService loadingService)
+        public SceneService(
+            ILogService logService,
+            ILoadingService loadingService,
+            ISceneTransition sceneTransition = null)
         {
             _logService = logService;
             _loadingService = loadingService;
+            _transition = sceneTransition;
         }
 
         public async UniTask LoadSceneAsync(string sceneKey, bool useLoadingScreen = true, IProgress<float> progress = null)
@@ -40,8 +45,11 @@ namespace Core.Feature.SceneManagement.Runtime
                 await UnloadCurrentSceneAsync();
             }
 
-            // TODO: 如果 useLoadingScreen 为 true，这里应该先加载 Loading 界面
-            // await ShowLoadingScreen();
+            // 过渡前（淡出）
+            if (useLoadingScreen && _transition != null)
+            {
+                await _transition.PlayOutAsync(CurrentSceneKey, sceneKey, $"切换到 {sceneKey}");
+            }
 
             try
             {
@@ -70,9 +78,14 @@ namespace Core.Feature.SceneManagement.Runtime
                 _logService.Error(LogCategory.Core, $"场景加载发生异常: {sceneKey}", e);
                 throw;
             }
-
-            // TODO: 隐藏 Loading 界面
-            // await HideLoadingScreen();
+            finally
+            {
+                // 过渡后（淡入），即便失败也尝试恢复视觉状态
+                if (useLoadingScreen && _transition != null)
+                {
+                    await _transition.PlayInAsync(sceneKey, $"切换完成 {sceneKey}");
+                }
+            }
         }
 
         public async UniTask UnloadSceneAsync(string sceneKey)
