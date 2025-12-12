@@ -14,6 +14,10 @@ namespace Core.Feature.SceneManagement.Abstractions
         /// </summary>
         string CurrentSceneKey { get; }
 
+        event Action<SceneTransitionEvent> OnTransitionStarted;
+
+        event Action<SceneTransitionEvent> OnTransitionCompleted;
+
         /// <summary>
         /// 异步加载场景
         /// </summary>

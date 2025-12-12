@@ -70,32 +70,37 @@ namespace Core.Bootstrap
                 ? _sceneTransitionConfig
                 : SceneTransitionConfig.Default;
 
-            if (!sceneTransitionConfig.enableTransition)
-            {
-                builder.Register<NoSceneTransition>(Lifetime.Singleton)
-                    .As<ISceneTransition>();
-            }
-            else if (sceneTransitionConfig.mode == SceneTransitionConfig.TransitionMode.Cinematic)
-            {
-                builder.Register<SceneCinematicTransition>(Lifetime.Singleton)
-                    .WithParameter("barHeightRatio", sceneTransitionConfig.barHeightRatio)
-                    .WithParameter("barCloseDuration", sceneTransitionConfig.barCloseDuration)
-                    .WithParameter("barOpenDuration", sceneTransitionConfig.barOpenDuration)
-                    .WithParameter("fadeOutDuration", sceneTransitionConfig.cinematicFadeOutDuration)
-                    .WithParameter("fadeInDuration", sceneTransitionConfig.cinematicFadeInDuration)
-                    .WithParameter("overlayColor", sceneTransitionConfig.OverlayColor)
-                    .WithParameter("sortingOrder", sceneTransitionConfig.sortingOrder)
-                    .As<ISceneTransition>();
-            }
-            else // Fade
-            {
-                builder.Register<SceneFadeTransition>(Lifetime.Singleton)
-                    .WithParameter("fadeOutDuration", sceneTransitionConfig.fadeOutDuration)
-                    .WithParameter("fadeInDuration", sceneTransitionConfig.fadeInDuration)
-                    .WithParameter("overlayColor", sceneTransitionConfig.OverlayColor)
-                    .WithParameter("sortingOrder", sceneTransitionConfig.sortingOrder)
-                    .As<ISceneTransition>();
-            }
+            builder.RegisterInstance(sceneTransitionConfig);
+
+            builder.Register<NoSceneTransition>(Lifetime.Singleton)
+                .As<ISelectableSceneTransition>();
+
+            builder.Register<SceneCinematicTransition>(Lifetime.Singleton)
+                .WithParameter("barHeightRatio", sceneTransitionConfig.barHeightRatio)
+                .WithParameter("barCloseDuration", sceneTransitionConfig.barCloseDuration)
+                .WithParameter("barOpenDuration", sceneTransitionConfig.barOpenDuration)
+                .WithParameter("fadeOutDuration", sceneTransitionConfig.cinematicFadeOutDuration)
+                .WithParameter("fadeInDuration", sceneTransitionConfig.cinematicFadeInDuration)
+                .WithParameter("overlayColor", sceneTransitionConfig.OverlayColor)
+                .WithParameter("sortingOrder", sceneTransitionConfig.sortingOrder)
+                .As<ISelectableSceneTransition>();
+
+            builder.Register<SceneFadeTransition>(Lifetime.Singleton)
+                .WithParameter("fadeOutDuration", sceneTransitionConfig.fadeOutDuration)
+                .WithParameter("fadeInDuration", sceneTransitionConfig.fadeInDuration)
+                .WithParameter("overlayColor", sceneTransitionConfig.OverlayColor)
+                .WithParameter("sortingOrder", sceneTransitionConfig.sortingOrder)
+                .As<ISelectableSceneTransition>()
+                .AsSelf();
+
+            builder.Register<SceneShutterTransition>(Lifetime.Singleton)
+                .As<ISelectableSceneTransition>();
+
+            builder.Register<SceneNoiseTransition>(Lifetime.Singleton)
+                .As<ISelectableSceneTransition>();
+
+            builder.Register<SceneTransitionSelector>(Lifetime.Singleton)
+                .As<ISceneTransition>();
 
             builder.Register<SceneService>(Lifetime.Singleton)
                 .As<ISceneService>();

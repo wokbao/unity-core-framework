@@ -17,6 +17,8 @@ namespace Core.Feature.SceneManagement.Runtime
     public sealed class SceneService : ISceneService, IDisposable
     {
         public string CurrentSceneKey { get; private set; }
+        public event Action<SceneTransitionEvent> OnTransitionStarted;
+        public event Action<SceneTransitionEvent> OnTransitionCompleted;
 
         private readonly ILogService _logService;
         private readonly ILoadingService _loadingService;
@@ -38,26 +40,27 @@ namespace Core.Feature.SceneManagement.Runtime
             _logService.Information(LogCategory.Core, $"开始加载场景 {sceneKey}");
 
             using var loadingScope = _loadingService?.Begin($"加载场景 {sceneKey}");
+            var transitionEvent = new SceneTransitionEvent(CurrentSceneKey, sceneKey);
 
-            // 如果有旧场景是通过 Addressables 加载的，先卸载
             if (_currentSceneHandle.IsValid())
             {
                 await UnloadCurrentSceneAsync();
             }
 
-            // 过渡前（淡出）
             if (useLoadingScreen && _transition != null)
             {
+                OnTransitionStarted?.Invoke(transitionEvent);
                 await _transition.PlayOutAsync(CurrentSceneKey, sceneKey, $"切换到 {sceneKey}");
             }
+            else
+            {
+                OnTransitionStarted?.Invoke(transitionEvent);
+            }
 
+            var loadSucceeded = false;
             try
             {
-                // 使用 Addressables 加载场景
-                // LoadSceneMode.Single 会自动卸载当前非 DontDestroyOnLoad 的场景
                 var handle = Addressables.LoadSceneAsync(sceneKey, LoadSceneMode.Single);
-
-                // 进度追踪：传递给外部并同步到 LoadingService
                 var progressReporter = _loadingService?.CreateProgressReporter($"加载场景 {sceneKey}", progress) ?? progress;
                 await handle.ToUniTask(progress: progressReporter);
 
@@ -66,6 +69,7 @@ namespace Core.Feature.SceneManagement.Runtime
                     _currentSceneHandle = handle;
                     CurrentSceneKey = sceneKey;
                     _logService.Information(LogCategory.Core, $"场景加载成功: {sceneKey}");
+                    loadSucceeded = true;
                 }
                 else
                 {
@@ -80,18 +84,20 @@ namespace Core.Feature.SceneManagement.Runtime
             }
             finally
             {
-                // 过渡后（淡入），即便失败也尝试恢复视觉状态
                 if (useLoadingScreen && _transition != null)
                 {
                     await _transition.PlayInAsync(sceneKey, $"切换完成 {sceneKey}");
+                }
+
+                if (loadSucceeded)
+                {
+                    OnTransitionCompleted?.Invoke(transitionEvent);
                 }
             }
         }
 
         public async UniTask UnloadSceneAsync(string sceneKey)
         {
-            // 主要用于卸载叠加场景（Additive），当前暂未实现多场景管理逻辑
-            // 如果是卸载主场景，通常直接 Load 新场景即可
             await UniTask.CompletedTask;
         }
 
@@ -107,7 +113,7 @@ namespace Core.Feature.SceneManagement.Runtime
 
         public void Dispose()
         {
-            // 可以在这里做一些清理工作
+            // 这里可以做一些清理工作
         }
     }
 }

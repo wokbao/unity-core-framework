@@ -10,7 +10,7 @@ namespace Core.Feature.SceneManagement.Runtime
     /// 影院式过渡：上下黑条闭合 + 叠加淡入淡出，使用不受时间缩放影响的插值。
     /// 设计目标：默认即可获得更具“大片感”的场景切换效果，无需额外资源。
     /// </summary>
-    public sealed class SceneCinematicTransition : ISceneTransition, IDisposable
+    public sealed class SceneCinematicTransition : ISelectableSceneTransition, IDisposable
     {
         private readonly float _barHeightRatio;
         private readonly float _fadeOutDuration;
@@ -19,6 +19,7 @@ namespace Core.Feature.SceneManagement.Runtime
         private readonly float _barOpenDuration;
         private readonly Color _overlayColor;
         private readonly int _sortingOrder;
+        public SceneTransitionMode Mode => SceneTransitionMode.Cinematic;
 
         private readonly GameObject _root;
         private readonly CanvasGroup _canvasGroup;

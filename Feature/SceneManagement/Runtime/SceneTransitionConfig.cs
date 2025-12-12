@@ -1,3 +1,4 @@
+using Core.Feature.SceneManagement.Abstractions;
 using UnityEngine;
 
 namespace Core.Feature.SceneManagement.Runtime
@@ -9,17 +10,12 @@ namespace Core.Feature.SceneManagement.Runtime
     [CreateAssetMenu(menuName = "Core/Scene Transition Config", fileName = "SceneTransitionConfig")]
     public sealed class SceneTransitionConfig : ScriptableObject
     {
-        public enum TransitionMode
-        {
-            Cinematic, // 上下黑条 + 淡入淡出
-            Fade       // 纯黑场淡入淡出
-        }
 
         [Header("总开关")]
         public bool enableTransition = true;
 
         [Header("方案选择")]
-        public TransitionMode mode = TransitionMode.Cinematic;
+        public SceneTransitionMode mode = SceneTransitionMode.Cinematic;
 
         [Header("公共参数")]
         [Range(0f, 1f)] public float overlayAlpha = 0.95f;
@@ -44,7 +40,7 @@ namespace Core.Feature.SceneManagement.Runtime
             {
                 var cfg = CreateInstance<SceneTransitionConfig>();
                 cfg.enableTransition = true;
-                cfg.mode = TransitionMode.Cinematic;
+                cfg.mode = SceneTransitionMode.Cinematic;
                 cfg.overlayAlpha = 0.95f;
                 cfg.sortingOrder = 8000;
                 cfg.barHeightRatio = 0.18f;

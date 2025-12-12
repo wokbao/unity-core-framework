@@ -9,13 +9,15 @@ namespace Core.Feature.SceneManagement.Runtime
     /// <summary>
     /// 基于 UI Canvas 的黑场淡入淡出过渡，使用不随时间缩放的插值确保在加载期间也能平滑播放。
     /// </summary>
-    public sealed class SceneFadeTransition : ISceneTransition, IDisposable
+    public sealed class SceneFadeTransition : ISelectableSceneTransition, IDisposable
     {
         private readonly float _fadeOutDuration;
         private readonly float _fadeInDuration;
         private readonly CanvasGroup _canvasGroup;
         private readonly Image _overlay;
         private readonly GameObject _root;
+
+        public SceneTransitionMode Mode => SceneTransitionMode.Fade;
 
         public SceneFadeTransition(
             float fadeOutDuration = 0.35f,
