@@ -81,7 +81,7 @@ namespace Core.Runtime.Configuration
         /// </summary>
         /// <param name="manifest">配置清单，包含所有需要加载的配置条目</param>
         /// <returns>配置加载结果，包含成功和失败的配置信息</returns>
-        public static ConfigLoadResult LoadFromManifest(ConfigManifest manifest)
+        public static ConfigLoadResult LoadFromManifest(IConfigManifest manifest)
         {
             var result = new ConfigLoadResult();
             
@@ -102,7 +102,8 @@ namespace Core.Runtime.Configuration
             // 批量加载
             foreach (var entry in sortedEntries)
             {
-                LoadConfigEntry(entry, result, manifest.EnableValidation);
+                var enableValidation = GetEnableValidation(manifest);
+                LoadConfigEntry(entry, result, enableValidation);
             }
 
             // 汇总报告
@@ -115,7 +116,7 @@ namespace Core.Runtime.Configuration
         /// 加载单个配置条目
         /// </summary>
         private static void LoadConfigEntry(
-            ConfigManifest.ConfigEntry entry, 
+            ConfigManifest.ConfigEntry entry,
             ConfigLoadResult result,
             bool enableValidation)
         {
@@ -247,6 +248,19 @@ namespace Core.Runtime.Configuration
             // 生产环境：跳过仅开发环境的配置
             return !entry.DevOnly;
 #endif
+        }
+
+        /// <summary>
+        /// 从不同 manifest 获取验证开关，默认开启。
+        /// </summary>
+        private static bool GetEnableValidation(IConfigManifest manifest)
+        {
+            if (manifest is ConfigManifest coreManifest)
+            {
+                return coreManifest.EnableValidation;
+            }
+
+            return true;
         }
 
         /// <summary>

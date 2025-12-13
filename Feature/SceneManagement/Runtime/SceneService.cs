@@ -115,7 +115,8 @@ namespace Core.Feature.SceneManagement.Runtime
             // 如果当前只挂着一个场景（常见于主菜单首场景），则不主动卸载。
             if (SceneManager.sceneCount <= 1 || !scene.IsValid())
             {
-                _logService.Information(LogCategory.Core, "跳过卸载当前场景（仅剩单场景或句柄无效）。");
+                // 降级为 Debug，避免在正常流程刷屏。
+                _logService.Debug(LogCategory.Core, "跳过卸载当前场景（仅剩单场景或句柄无效）。");
                 _currentSceneHandle = default;
                 return;
             }

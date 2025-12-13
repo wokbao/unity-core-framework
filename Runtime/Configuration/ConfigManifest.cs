@@ -55,11 +55,13 @@ namespace Core.Runtime.Configuration
     /// </list>
     /// </summary>
     [CreateAssetMenu(fileName = "ConfigManifest", menuName = "Core/Configuration/Manifest", order = 0)]
-    public class ConfigManifest : ScriptableObject
+    public class ConfigManifest : ScriptableObject, IConfigManifest
     {
         [Header("配置条目")]
         [Tooltip("所有需要加载的核心配置")]
         public List<ConfigEntry> Entries = new();
+
+        IReadOnlyList<ConfigEntry> IConfigManifest.Entries => Entries;
 
         [Header("加载设置")]
         [Tooltip("配置加载失败时是否阻塞启动")]
