@@ -103,12 +103,26 @@ namespace Core.Feature.SceneManagement.Runtime
 
         private async UniTask UnloadCurrentSceneAsync()
         {
-            if (_currentSceneHandle.IsValid())
+            // 对 LoadSceneMode.Single 来说，Unity 会自动卸载当前场景；如果只剩 1 个场景，则跳过卸载，避免 “Unloading the last loaded scene” 警告。
+            if (!_currentSceneHandle.IsValid())
             {
-                _logService.Information(LogCategory.Core, "卸载当前场景...");
-                await Addressables.UnloadSceneAsync(_currentSceneHandle);
-                _currentSceneHandle = default;
+                return;
             }
+
+            var sceneInstance = _currentSceneHandle.Result;
+            var scene = sceneInstance.Scene;
+
+            // 如果当前只挂着一个场景（常见于主菜单首场景），则不主动卸载。
+            if (SceneManager.sceneCount <= 1 || !scene.IsValid())
+            {
+                _logService.Information(LogCategory.Core, "跳过卸载当前场景（仅剩单场景或句柄无效）。");
+                _currentSceneHandle = default;
+                return;
+            }
+
+            _logService.Information(LogCategory.Core, "卸载当前场景...");
+            await Addressables.UnloadSceneAsync(_currentSceneHandle);
+            _currentSceneHandle = default;
         }
 
         public void Dispose()
