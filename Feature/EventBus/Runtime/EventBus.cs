@@ -41,7 +41,15 @@ namespace Core.Feature.EventBus.Runtime
             var snapshot = list.ToArray();
             foreach (var sub in snapshot)
             {
-                sub.Handler?.Invoke(evt);
+                try
+                {
+                    sub.Handler?.Invoke(evt);
+                }
+                catch (Exception e)
+                {
+                    // 单个订阅者异常不应阻断其他订阅者
+                    UnityEngine.Debug.LogException(e);
+                }
             }
         }
 

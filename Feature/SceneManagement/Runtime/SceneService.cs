@@ -128,7 +128,8 @@ namespace Core.Feature.SceneManagement.Runtime
 
         public void Dispose()
         {
-            // 这里可以做一些清理工作
+            OnTransitionStarted = null;
+            OnTransitionCompleted = null;
         }
     }
 }

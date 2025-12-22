@@ -8,7 +8,7 @@ namespace Core.Feature.Loading.Runtime
     /// <summary>
     /// 默认加载服务实现，支持嵌套计数与进度/描述同步。
     /// </summary>
-    public sealed class LoadingService : ILoadingService
+    public sealed class LoadingService : ILoadingService, IDisposable
     {
         private readonly object _lock = new();
         private int _activeOperations;
@@ -80,6 +80,14 @@ namespace Core.Feature.Loading.Runtime
             UpdateState(Progress >= 1f ? 1f : Progress, Description, publish: true);
         }
 
+        /// <summary>
+        /// 释放资源，清理事件订阅。
+        /// </summary>
+        public void Dispose()
+        {
+            OnStateChanged = null;
+        }
+
         private sealed class LoadingScope : IDisposable
         {
             private LoadingService _owner;
@@ -97,3 +105,4 @@ namespace Core.Feature.Loading.Runtime
         }
     }
 }
+
