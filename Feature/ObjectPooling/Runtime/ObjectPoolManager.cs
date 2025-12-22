@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using Core.Feature.ObjectPooling.Abstractions;
+using Cysharp.Threading.Tasks;
 using UnityEngine;
+using UnityEngine.AddressableAssets;
 
 namespace Core.Feature.ObjectPooling.Runtime
 {
@@ -22,6 +25,16 @@ namespace Core.Feature.ObjectPooling.Runtime
         private readonly Dictionary<int, GameObjectPool> _prefabPools = new();
 
         /// <summary>
+        /// GameObject 实例到对象池的反向映射（优化 Return 性能）
+        /// </summary>
+        private readonly Dictionary<GameObject, GameObjectPool> _instanceToPool = new();
+
+        /// <summary>
+        /// Addressable Key 到预制体的缓存映射
+        /// </summary>
+        private readonly Dictionary<string, GameObject> _addressableCache = new();
+
+        /// <summary>
         /// 从对象池中租借一个指定类型的普通 C# 对象
         /// </summary>
         /// <typeparam name="T">要租借的对象类型</typeparam>
@@ -30,15 +43,15 @@ namespace Core.Feature.ObjectPooling.Runtime
         /// <param name="onReturn">对象被归还时调用的回调函数（可选）</param>
         /// <returns>租借到的对象实例</returns>
         /// <exception cref="ArgumentNullException">当 factory 为 null 时抛出</exception>
-        public T Rent<T>(Func<T> factory, Action<T> onRent = null, Action<T> onReturn = null)
+        public T Rent<T>(Func<T> factory, Action<T> onRent = null, Action<T> onReturn = null, int maxCapacity = 100)
         {
-            if (factory == null) throw new ArgumentNullException(nameof(factory));
+            if (factory == null) throw new ArgumentNullException(nameof(factory), "工厂方法不能为 null");
             var type = typeof(T);
 
             // 如果不存在该类型的对象池，则创建一个新的
             if (!_objectPools.TryGetValue(type, out var pool))
             {
-                pool = new ObjectPool<T>(factory, onRent, onReturn);
+                pool = new ObjectPool<T>(factory, onRent, onReturn, maxCapacity);
                 _objectPools[type] = pool;
             }
 
@@ -70,15 +83,16 @@ namespace Core.Feature.ObjectPooling.Runtime
         /// <param name="worldPositionStays">设置父变换时是否保持世界位置不变（可选，默认为 false）</param>
         /// <returns>租借到的 GameObject 实例</returns>
         /// <exception cref="ArgumentNullException">当 prefab 为 null 时抛出</exception>
-        public GameObject Rent(GameObject prefab, Transform parent = null, bool worldPositionStays = false)
+        public GameObject Rent(GameObject prefab, Transform parent = null, bool worldPositionStays = false, 
+                               Action<GameObject> onReset = null, int maxCapacity = 50)
         {
-            if (prefab == null) throw new ArgumentNullException(nameof(prefab));
+            if (prefab == null) throw new ArgumentNullException(nameof(prefab), "预制体不能为 null");
             var key = prefab.GetInstanceID();
 
             // 如果不存在该预制体的对象池，则创建一个新的
             if (!_prefabPools.TryGetValue(key, out var pool))
             {
-                pool = new GameObjectPool(prefab, parent, worldPositionStays);
+                pool = new GameObjectPool(this, prefab, parent, worldPositionStays, onReset, maxCapacity);
                 _prefabPools[key] = pool;
             }
 
@@ -94,17 +108,15 @@ namespace Core.Feature.ObjectPooling.Runtime
         {
             if (instance == null) return;
 
-            // 遍历所有 GameObject 池，查找该实例所属的对象池
-            foreach (var pool in _prefabPools.Values)
+            // 【优化1：反向映射】O(1) 查找，替代 O(n*m) 遍历
+            if (_instanceToPool.TryGetValue(instance, out var pool))
             {
-                if (pool.Owns(instance))
-                {
-                    pool.Return(instance);
-                    return;
-                }
+                pool.Return(instance);
+                return;
             }
 
             // 如果未找到归属的对象池，直接销毁该实例以避免内存泄漏
+            UnityEngine.Debug.LogWarning($"[对象池] 归还的对象 {instance.name} 不属于任何对象池，已销毁");
             instance.SetActive(false);
             UnityEngine.Object.Destroy(instance);
         }
@@ -117,15 +129,40 @@ namespace Core.Feature.ObjectPooling.Runtime
         /// <param name="parent">实例化时的父变换（可选）</param>
         /// <param name="worldPositionStays">设置父变换时是否保持世界位置不变（可选，默认为 false）</param>
         /// <exception cref="ArgumentNullException">当 prefab 为 null 时抛出</exception>
+        public async UniTask<GameObject> RentAsync(string addressableKey, Transform parent = null, 
+                                                     bool worldPositionStays = false, 
+                                                     Action<GameObject> onReset = null, 
+                                                     int maxCapacity = 50, 
+                                                     CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(addressableKey))
+                throw new ArgumentException("Addressable Key 不能为空", nameof(addressableKey));
+
+            // 检查缓存
+            if (!_addressableCache.TryGetValue(addressableKey, out var prefab))
+            {
+                // 【优化5：异步支持】从 Addressables 加载
+                var handle = Addressables.LoadAssetAsync<GameObject>(addressableKey);
+                prefab = await handle.ToUniTask(cancellationToken: ct);
+                
+                if (prefab == null)
+                    throw new InvalidOperationException($"无法从 Addressable Key '{addressableKey}' 加载预制体");
+                
+                _addressableCache[addressableKey] = prefab;
+            }
+
+            return Rent(prefab, parent, worldPositionStays, onReset, maxCapacity);
+        }
+
         public void WarmUp(GameObject prefab, int count, Transform parent = null, bool worldPositionStays = false)
         {
-            if (prefab == null) throw new ArgumentNullException(nameof(prefab));
+            if (prefab == null) throw new ArgumentNullException(nameof(prefab), "预制体不能为 null");
             var key = prefab.GetInstanceID();
 
             // 如果不存在该预制体的对象池，则创建一个新的
             if (!_prefabPools.TryGetValue(key, out var pool))
             {
-                pool = new GameObjectPool(prefab, parent, worldPositionStays);
+                pool = new GameObjectPool(this, prefab, parent, worldPositionStays, null, 50);
                 _prefabPools[key] = pool;
             }
 
@@ -137,6 +174,24 @@ namespace Core.Feature.ObjectPooling.Runtime
         /// 清空所有对象池
         /// </summary>
         /// <param name="destroyGameObjects">是否销毁所有 GameObject 实例（默认为 true）</param>
+        public PoolStatistics GetStatistics(GameObject prefab)
+        {
+            if (prefab == null) throw new ArgumentNullException(nameof(prefab), "预制体不能为 null");
+            var key = prefab.GetInstanceID();
+            
+            return _prefabPools.TryGetValue(key, out var pool) 
+                ? pool.GetStatistics() 
+                : default;
+        }
+
+        public PoolStatistics GetStatistics<T>()
+        {
+            var type = typeof(T);
+            return _objectPools.TryGetValue(type, out var pool) 
+                ? ((ObjectPool<T>)pool).GetStatistics() 
+                : default;
+        }
+
         public void Clear(bool destroyGameObjects = true)
         {
             // 清空普通对象池
@@ -151,8 +206,16 @@ namespace Core.Feature.ObjectPooling.Runtime
                 }
             }
 
-            // 清空游戏对象池字典
+            // 清空游戏对象池字典和反向映射
             _prefabPools.Clear();
+            _instanceToPool.Clear();
+            
+            // 释放 Addressables 缓存
+            foreach (var key in _addressableCache.Keys)
+            {
+                Addressables.Release(_addressableCache[key]);
+            }
+            _addressableCache.Clear();
         }
 
         /// <summary>
@@ -176,25 +239,22 @@ namespace Core.Feature.ObjectPooling.Runtime
         /// <typeparam name="T">对象池管理的对象类型</typeparam>
         private sealed class ObjectPool<T> : IObjectPool
         {
-            /// <summary>
-            /// 存储对象的栈，使用栈实现后进先出的对象复用策略
-            /// </summary>
             private readonly Stack<T> _stack = new();
-
-            /// <summary>
-            /// 创建新对象的工厂方法
-            /// </summary>
             private readonly Func<T> _factory;
-
-            /// <summary>
-            /// 对象被租借时调用的回调函数
-            /// </summary>
             private readonly Action<T> _onRent;
-
-            /// <summary>
-            /// 对象被归还时调用的回调函数
-            /// </summary>
             private readonly Action<T> _onReturn;
+            
+            /// <summary>
+            /// 【优化2：容量限制】池的最大容量
+            /// </summary>
+            private readonly int _maxCapacity;
+            
+            /// <summary>
+            /// 【优化4：统计信息】
+            /// </summary>
+            private int _totalCreated;
+            private int _rentCount;
+            private int _returnCount;
 
             /// <summary>
             /// 初始化对象池实例
@@ -202,11 +262,12 @@ namespace Core.Feature.ObjectPooling.Runtime
             /// <param name="factory">创建新对象的工厂方法</param>
             /// <param name="onRent">对象被租借时的回调函数</param>
             /// <param name="onReturn">对象被归还时的回调函数</param>
-            public ObjectPool(Func<T> factory, Action<T> onRent, Action<T> onReturn)
+            public ObjectPool(Func<T> factory, Action<T> onRent, Action<T> onReturn, int maxCapacity)
             {
                 _factory = factory;
                 _onRent = onRent;
                 _onReturn = onReturn;
+                _maxCapacity = maxCapacity;
             }
 
             /// <summary>
@@ -215,12 +276,20 @@ namespace Core.Feature.ObjectPooling.Runtime
             /// <returns>租借到的对象实例</returns>
             public T Rent()
             {
-                // 如果栈不为空，从栈中弹出一个对象；否则使用工厂方法创建新对象
-                var instance = _stack.Count > 0 ? _stack.Pop() : _factory();
+                _rentCount++;
+                
+                T instance;
+                if (_stack.Count > 0)
+                {
+                    instance = _stack.Pop();
+                }
+                else
+                {
+                    instance = _factory();
+                    _totalCreated++;
+                }
 
-                // 调用租借回调函数
                 _onRent?.Invoke(instance);
-
                 return instance;
             }
 
@@ -230,11 +299,26 @@ namespace Core.Feature.ObjectPooling.Runtime
             /// <param name="instance">要归还的对象实例</param>
             public void Return(T instance)
             {
-                // 调用归还回调函数
+                _returnCount++;
                 _onReturn?.Invoke(instance);
 
-                // 将对象推入栈中
-                _stack.Push(instance);
+                // 【优化2：容量限制】超过容量则不缓存，让 GC 回收
+                if (_stack.Count < _maxCapacity)
+                {
+                    _stack.Push(instance);
+                }
+            }
+
+            public PoolStatistics GetStatistics()
+            {
+                return new PoolStatistics
+                {
+                    TotalCreated = _totalCreated,
+                    ActiveCount = _totalCreated - _stack.Count,
+                    IdleCount = _stack.Count,
+                    RentCount = _rentCount,
+                    ReturnCount = _returnCount
+                };
             }
         }
 
@@ -243,30 +327,29 @@ namespace Core.Feature.ObjectPooling.Runtime
         /// </summary>
         private sealed class GameObjectPool
         {
-            /// <summary>
-            /// 用于创建实例的预制体
-            /// </summary>
+            private readonly ObjectPoolManager _manager;
             private readonly GameObject _prefab;
-
-            /// <summary>
-            /// 存储所有已创建的 GameObject 实例的列表，用于跟踪和管理所有实例
-            /// </summary>
             private readonly List<GameObject> _all = new();
-
-            /// <summary>
-            /// 存储可用（未被租借）GameObject 实例的栈
-            /// </summary>
             private readonly Stack<GameObject> _stack = new();
-
-            /// <summary>
-            /// 默认的父变换，用于在归还时重置 GameObject 的父对象
-            /// </summary>
             private readonly Transform _defaultParent;
-
-            /// <summary>
-            /// 默认的世界位置保持设置，用于在归还时重置 GameObject 的位置
-            /// </summary>
             private readonly bool _defaultWorldPositionStays;
+            
+            /// <summary>
+            /// 【优化3：重置回调】对象归还时的重置回调
+            /// </summary>
+            private readonly Action<GameObject> _onReset;
+            
+            /// <summary>
+            /// 【优化2：容量限制】池的最大容量
+            /// </summary>
+            private readonly int _maxCapacity;
+            
+            /// <summary>
+            /// 【优化4：统计信息】
+            /// </summary>
+            private int _totalCreated;
+            private int _rentCount;
+            private int _returnCount;
 
             /// <summary>
             /// 初始化 GameObject 对象池实例
@@ -274,11 +357,15 @@ namespace Core.Feature.ObjectPooling.Runtime
             /// <param name="prefab">用于创建实例的预制体</param>
             /// <param name="parent">默认的父变换</param>
             /// <param name="worldPositionStays">默认的世界位置保持设置</param>
-            public GameObjectPool(GameObject prefab, Transform parent, bool worldPositionStays)
+            public GameObjectPool(ObjectPoolManager manager, GameObject prefab, Transform parent, 
+                                  bool worldPositionStays, Action<GameObject> onReset, int maxCapacity)
             {
+                _manager = manager;
                 _prefab = prefab;
                 _defaultParent = parent;
                 _defaultWorldPositionStays = worldPositionStays;
+                _onReset = onReset;
+                _maxCapacity = maxCapacity;
             }
 
             /// <summary>
@@ -289,20 +376,24 @@ namespace Core.Feature.ObjectPooling.Runtime
             /// <returns>租借到的 GameObject 实例</returns>
             public GameObject Rent(Transform parent, bool worldPositionStays)
             {
-                // 如果栈不为空，从栈中弹出一个 GameObject；否则创建新实例
-                var instance = _stack.Count > 0 ? _stack.Pop() : CreateInstance(parent, worldPositionStays);
-                if (instance == null)
+                _rentCount++;
+                
+                GameObject instance;
+                if (_stack.Count > 0)
                 {
-                    return null;
+                    instance = _stack.Pop();
+                }
+                else
+                {
+                    instance = CreateInstance(parent, worldPositionStays);
+                    if (instance == null) return null;
                 }
 
-                // 如果指定了父变换且与当前父变换不同，则更新父变换
                 if (parent != null && instance.transform.parent != parent)
                 {
                     instance.transform.SetParent(parent, worldPositionStays);
                 }
 
-                // 激活 GameObject
                 instance.SetActive(true);
                 return instance;
             }
@@ -315,14 +406,26 @@ namespace Core.Feature.ObjectPooling.Runtime
             {
                 if (instance == null) return;
 
-                // 停用 GameObject
+                _returnCount++;
                 instance.SetActive(false);
-
-                // 重置父变换
+                
+                // 【优化3：重置回调】归还时重置对象状态
+                _onReset?.Invoke(instance);
+                
                 instance.transform.SetParent(_defaultParent, _defaultWorldPositionStays);
 
-                // 将 GameObject 推入栈中
-                _stack.Push(instance);
+                // 【优化2：容量限制】超过容量则销毁，不缓存
+                if (_stack.Count < _maxCapacity)
+                {
+                    _stack.Push(instance);
+                }
+                else
+                {
+                    // 超过容量，销毁对象
+                    _all.Remove(instance);
+                    _manager._instanceToPool.Remove(instance);
+                    UnityEngine.Object.Destroy(instance);
+                }
             }
 
             /// <summary>
@@ -380,16 +483,28 @@ namespace Core.Feature.ObjectPooling.Runtime
             /// <param name="parent">实例化时的父变换</param>
             /// <param name="worldPositionStays">设置父变换时是否保持世界位置不变</param>
             /// <returns>创建的 GameObject 实例</returns>
+            public PoolStatistics GetStatistics()
+            {
+                return new PoolStatistics
+                {
+                    TotalCreated = _totalCreated,
+                    ActiveCount = _all.Count - _stack.Count,
+                    IdleCount = _stack.Count,
+                    RentCount = _rentCount,
+                    ReturnCount = _returnCount
+                };
+            }
+
             private GameObject CreateInstance(Transform parent, bool worldPositionStays)
             {
-                // 确定最终的父变换
                 var targetParent = parent != null ? parent : _defaultParent;
-
-                // 实例化 GameObject
                 var instance = UnityEngine.Object.Instantiate(_prefab, targetParent, worldPositionStays);
 
-                // 将实例添加到管理列表中
+                _totalCreated++;
                 _all.Add(instance);
+                
+                // 【优化1：反向映射】注册实例到池的映射
+                _manager._instanceToPool[instance] = this;
 
                 return instance;
             }
