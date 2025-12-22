@@ -44,13 +44,17 @@ namespace Core.Feature.SceneManagement.Runtime
 
             if (_currentSceneHandle.IsValid())
             {
+                _loadingService?.BeginPhase("卸载当前场景");
                 await UnloadCurrentSceneAsync();
+                _loadingService?.EndPhase("卸载当前场景");
             }
 
             if (useLoadingScreen && _transition != null)
             {
                 OnTransitionStarted?.Invoke(transitionEvent);
+                _loadingService?.BeginPhase("播放转场动画");
                 await _transition.PlayOutAsync(CurrentSceneKey, sceneKey, $"切换到 {sceneKey}");
+                _loadingService?.EndPhase("播放转场动画");
             }
             else
             {
@@ -60,6 +64,7 @@ namespace Core.Feature.SceneManagement.Runtime
             var loadSucceeded = false;
             try
             {
+                _loadingService?.BeginPhase("加载场景资源");
                 var handle = Addressables.LoadSceneAsync(sceneKey, LoadSceneMode.Single);
                 var progressReporter = _loadingService?.CreateProgressReporter($"加载场景 {sceneKey}", progress) ?? progress;
                 await handle.ToUniTask(progress: progressReporter);
@@ -68,17 +73,20 @@ namespace Core.Feature.SceneManagement.Runtime
                 {
                     _currentSceneHandle = handle;
                     CurrentSceneKey = sceneKey;
+                    _loadingService?.EndPhase("加载场景资源");
                     _logService.Information(LogCategory.Core, $"场景加载成功: {sceneKey}");
                     loadSucceeded = true;
                 }
                 else
                 {
+                    _loadingService?.EndPhase("加载场景资源");
                     _logService.Error(LogCategory.Core, $"场景加载失败: {sceneKey}");
                     throw new Exception($"场景加载失败: {sceneKey}");
                 }
             }
             catch (Exception e)
             {
+                _loadingService?.EndPhase("加载场景资源");
                 _logService.Error(LogCategory.Core, $"场景加载发生异常: {sceneKey}", e);
                 throw;
             }
@@ -86,7 +94,9 @@ namespace Core.Feature.SceneManagement.Runtime
             {
                 if (useLoadingScreen && _transition != null)
                 {
+                    _loadingService?.BeginPhase("场景转场完成");
                     await _transition.PlayInAsync(sceneKey, $"切换完成 {sceneKey}");
+                    _loadingService?.EndPhase("场景转场完成");
                 }
 
                 if (loadSucceeded)

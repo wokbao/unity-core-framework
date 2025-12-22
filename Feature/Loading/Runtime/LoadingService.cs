@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using Core.Feature.Loading.Abstractions;
 using UnityEngine;
@@ -6,14 +7,17 @@ using UnityEngine;
 namespace Core.Feature.Loading.Runtime
 {
     /// <summary>
-    /// 默认加载服务实现，支持嵌套计数与进度/描述同步。
+    /// 默认加载服务实现，支持嵌套计数、进度报告、生命周期钩子和性能遥测。
     /// </summary>
     public sealed class LoadingService : ILoadingService, IDisposable
     {
         private readonly object _lock = new();
+        private readonly ILoadingTelemetry _telemetry;
+        private readonly Dictionary<string, float> _phaseStartTimes = new();
         private int _activeOperations;
         private float _progress;
         private string _description;
+        private string _currentPhase;
 
         public LoadingState State => new(IsLoading, Progress, Description, ActiveOperations);
 
@@ -21,14 +25,34 @@ namespace Core.Feature.Loading.Runtime
         public float Progress => _progress;
         public string Description => _description;
         public int ActiveOperations => Volatile.Read(ref _activeOperations);
+        public string CurrentPhase => _currentPhase;
 
         public event Action<LoadingState> OnStateChanged;
+        public event Action OnLoadingStarted;
+        public event Action OnLoadingCompleted;
+        public event Action<string> OnPhaseChanged;
+        public event Action<Exception> OnLoadingError;
+
+        public LoadingService(ILoadingTelemetry telemetry = null)
+        {
+            _telemetry = telemetry;
+        }
 
         public IDisposable Begin(string description = null)
         {
-            Interlocked.Increment(ref _activeOperations);
+            var operationId = Guid.NewGuid().ToString();
+            var prevOps = Interlocked.Increment(ref _activeOperations) - 1;
+
+            _telemetry?.RecordLoadingStart(operationId, description);
+
+            if (prevOps == 0)
+            {
+                // 从 0 变为 1，首次开始加载
+                OnLoadingStarted?.Invoke();
+            }
+
             UpdateState(Progress, description, publish: true);
-            return new LoadingScope(this);
+            return new LoadingScope(this, operationId, Time.realtimeSinceStartup);
         }
 
         public void ReportProgress(float progress, string description = null)
@@ -43,6 +67,64 @@ namespace Core.Feature.Loading.Runtime
                 linkedProgress?.Report(value);
                 UpdateState(value, description, publish: true);
             });
+        }
+
+        public void BeginPhase(string phaseName)
+        {
+            if (string.IsNullOrEmpty(phaseName))
+            {
+                Debug.LogWarning("尝试开始一个空阶段名称，已忽略");
+                return;
+            }
+
+            lock (_lock)
+            {
+                _currentPhase = phaseName;
+                _phaseStartTimes[phaseName] = Time.realtimeSinceStartup;
+            }
+
+            _telemetry?.RecordPhaseStart(phaseName);
+            OnPhaseChanged?.Invoke(phaseName);
+            UpdateState(Progress, phaseName, publish: true);
+        }
+
+        public void EndPhase(string phaseName)
+        {
+            if (string.IsNullOrEmpty(phaseName))
+            {
+                Debug.LogWarning("尝试结束一个空阶段名称，已忽略");
+                return;
+            }
+
+            float duration = 0f;
+            lock (_lock)
+            {
+                if (_currentPhase == phaseName)
+                {
+                    _currentPhase = null;
+                }
+
+                if (_phaseStartTimes.TryGetValue(phaseName, out var startTime))
+                {
+                    duration = Time.realtimeSinceStartup - startTime;
+                    _phaseStartTimes.Remove(phaseName);
+                }
+            }
+
+            _telemetry?.RecordPhaseEnd(phaseName, duration);
+            OnPhaseChanged?.Invoke(null);
+        }
+
+        public void ReportError(Exception exception)
+        {
+            if (exception == null)
+            {
+                Debug.LogWarning("尝试报告 null 异常，已忽略");
+                return;
+            }
+
+            Debug.LogError($"加载过程中发生错误：{exception.Message}\n{exception.StackTrace}");
+            OnLoadingError?.Invoke(exception);
         }
 
         private void UpdateState(float progress, string description, bool publish)
@@ -60,6 +142,7 @@ namespace Core.Feature.Loading.Runtime
                     // 自动复位
                     _progress = 0f;
                     _description = null;
+                    _currentPhase = null;
                 }
             }
 
@@ -69,12 +152,22 @@ namespace Core.Feature.Loading.Runtime
             }
         }
 
-        private void EndScope()
+        private void EndScope(string operationId, float startTime)
         {
             var remaining = Interlocked.Decrement(ref _activeOperations);
             if (remaining < 0)
             {
                 Interlocked.Exchange(ref _activeOperations, 0);
+                remaining = 0;
+            }
+
+            float duration = Time.realtimeSinceStartup - startTime;
+            _telemetry?.RecordLoadingEnd(operationId, duration);
+
+            if (remaining == 0)
+            {
+                // 从 N 变为 0，所有加载完成
+                OnLoadingCompleted?.Invoke();
             }
 
             UpdateState(Progress >= 1f ? 1f : Progress, Description, publish: true);
@@ -86,21 +179,32 @@ namespace Core.Feature.Loading.Runtime
         public void Dispose()
         {
             OnStateChanged = null;
+            OnLoadingStarted = null;
+            OnLoadingCompleted = null;
+            OnPhaseChanged = null;
+            OnLoadingError = null;
         }
 
         private sealed class LoadingScope : IDisposable
         {
             private LoadingService _owner;
+            private string _operationId;
+            private float _startTime;
 
-            public LoadingScope(LoadingService owner)
+            public LoadingScope(LoadingService owner, string operationId, float startTime)
             {
                 _owner = owner;
+                _operationId = operationId;
+                _startTime = startTime;
             }
 
             public void Dispose()
             {
-                _owner?.EndScope();
-                _owner = null;
+                if (_owner != null)
+                {
+                    _owner.EndScope(_operationId, _startTime);
+                    _owner = null;
+                }
             }
         }
     }

@@ -3,7 +3,7 @@ using System;
 namespace Core.Feature.Loading.Abstractions
 {
     /// <summary>
-    /// 加载系统服务接口，支持嵌套计数、进度与描述文本。
+    /// 加载系统服务接口，支持嵌套计数、进度报告、生命周期钩子和加载阶段管理。
     /// </summary>
     public interface ILoadingService
     {
@@ -33,9 +33,34 @@ namespace Core.Feature.Loading.Abstractions
         int ActiveOperations { get; }
 
         /// <summary>
-        /// 状态变更回调。
+        /// 当前加载阶段名称（如 "正在加载资源..."、"正在初始化场景..." 等）。
+        /// </summary>
+        string CurrentPhase { get; }
+
+        /// <summary>
+        /// 状态变更回调（进度、描述、IsLoading 等任一变更时触发）。
         /// </summary>
         event Action<LoadingState> OnStateChanged;
+
+        /// <summary>
+        /// 首次开始加载时触发（ActiveOperations 从 0 变为 1）。
+        /// </summary>
+        event Action OnLoadingStarted;
+
+        /// <summary>
+        /// 所有加载操作完成时触发（ActiveOperations 从 N 变为 0）。
+        /// </summary>
+        event Action OnLoadingCompleted;
+
+        /// <summary>
+        /// 加载阶段变更时触发（BeginPhase/EndPhase 调用时）。
+        /// </summary>
+        event Action<string> OnPhaseChanged;
+
+        /// <summary>
+        /// 加载过程中发生错误时触发。
+        /// </summary>
+        event Action<Exception> OnLoadingError;
 
         /// <summary>
         /// 开启一个加载作用域，Dispose 时会自动结束（适用于嵌套计数）。
@@ -51,5 +76,21 @@ namespace Core.Feature.Loading.Abstractions
         /// 创建一个进度回调，自动同步到 LoadingService，并可联动外部进度。
         /// </summary>
         IProgress<float> CreateProgressReporter(string description = null, IProgress<float> linkedProgress = null);
+
+        /// <summary>
+        /// 开始一个新的加载阶段（用于细粒度进度追踪，如 "加载资源"、"初始化场景" 等）。
+        /// </summary>
+        void BeginPhase(string phaseName);
+
+        /// <summary>
+        /// 结束当前加载阶段。
+        /// </summary>
+        void EndPhase(string phaseName);
+
+        /// <summary>
+        /// 报告加载错误（会触发 OnLoadingError 事件）。
+        /// </summary>
+        void ReportError(Exception exception);
     }
 }
+

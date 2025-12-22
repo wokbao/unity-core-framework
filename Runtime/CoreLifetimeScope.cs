@@ -22,10 +22,14 @@ namespace Core.Bootstrap
     /// </summary>
     public sealed class CoreLifetimeScope : LifetimeScope
     {
-        [Header("核心配置")] [SerializeField] [Tooltip("核心配置清单，定义启动时需要加载的基础设施配置")]
+        [Header("核心配置")]
+        [SerializeField]
+        [Tooltip("核心配置清单，定义启动时需要加载的基础设施配置")]
         private ConfigManifest _coreConfigManifest;
 
-        [Header("场景过渡配置")] [SerializeField] [Tooltip("可选：配置过渡开关、方案与参数；为空则使用默认配置")]
+        [Header("场景过渡配置")]
+        [SerializeField]
+        [Tooltip("可选：配置过渡开关、方案与参数；为空则使用默认配置")]
         private SceneTransitionConfig _sceneTransitionConfig;
 
         protected override void Configure(IContainerBuilder builder)
@@ -56,6 +60,10 @@ namespace Core.Bootstrap
             // 事件总线
             builder.Register<EventBus>(Lifetime.Singleton)
                 .As<IEventBus>();
+
+            // 加载性能遥测
+            builder.Register<LoadingTelemetry>(Lifetime.Singleton)
+                .As<ILoadingTelemetry>();
 
             // 加载状态
             builder.Register<LoadingService>(Lifetime.Singleton)
