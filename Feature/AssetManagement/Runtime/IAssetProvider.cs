@@ -3,6 +3,9 @@ using System.Threading;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
 
+using UnityEngine.ResourceManagement.ResourceProviders;
+using UnityEngine.SceneManagement;
+
 namespace Core.Feature.AssetManagement.Runtime
 {
     /// <summary>
@@ -23,5 +26,9 @@ namespace Core.Feature.AssetManagement.Runtime
         void ReleaseInstance(GameObject instance);
 
         void Clear();
+
+        UniTask<SceneInstance> LoadSceneAsync(string key, LoadSceneMode loadMode = LoadSceneMode.Single, bool activateOnLoad = true, CancellationToken ct = default);
+
+        UniTask UnloadSceneAsync(SceneInstance scene, CancellationToken ct = default);
     }
 }

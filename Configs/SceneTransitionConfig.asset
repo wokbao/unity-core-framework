@@ -14,8 +14,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   enableTransition: 1
   mode: 0
-  overlayAlpha: 0.95
-  sortingOrder: 8000
+  overlayAlpha: 1
+  sortingOrder: 9999
   barHeightRatio: 0.18
   barCloseDuration: 1
   barOpenDuration: 1

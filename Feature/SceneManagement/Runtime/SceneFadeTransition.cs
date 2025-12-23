@@ -23,7 +23,7 @@ namespace Core.Feature.SceneManagement.Runtime
             float fadeOutDuration = 0.35f,
             float fadeInDuration = 0.3f,
             Color? overlayColor = null,
-            int sortingOrder = 8000)
+            int sortingOrder = 9999)
         {
             _fadeOutDuration = Mathf.Max(0.01f, fadeOutDuration);
             _fadeInDuration = Mathf.Max(0.01f, fadeInDuration);
@@ -81,8 +81,11 @@ namespace Core.Feature.SceneManagement.Runtime
             }
 
             _canvasGroup.alpha = to;
-            _canvasGroup.blocksRaycasts = false;
-            _canvasGroup.interactable = false;
+
+            // 只有当完全透明时才允许穿透
+            var isVisible = to > 0.01f;
+            _canvasGroup.blocksRaycasts = isVisible;
+            _canvasGroup.interactable = isVisible;
         }
 
         public void Dispose()

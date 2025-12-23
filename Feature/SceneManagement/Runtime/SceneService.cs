@@ -2,10 +2,9 @@ using System;
 using Core.Feature.Loading.Abstractions;
 using Core.Feature.Logging.Abstractions;
 using Core.Feature.SceneManagement.Abstractions;
+using Core.Feature.AssetManagement.Runtime;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
-using UnityEngine.AddressableAssets;
-using UnityEngine.ResourceManagement.AsyncOperations;
 using UnityEngine.ResourceManagement.ResourceProviders;
 using UnityEngine.SceneManagement;
 
@@ -18,20 +17,27 @@ namespace Core.Feature.SceneManagement.Runtime
     {
         public string CurrentSceneKey { get; private set; }
         public event Action<SceneTransitionEvent> OnTransitionStarted;
+        // 静态注册点，确保 100% 能找到 Handler，绕过 FindObjectOfType 的潜在问题
+        public static ISceneReadyHandler ActiveHandler;
         public event Action<SceneTransitionEvent> OnTransitionCompleted;
 
         private readonly ILogService _logService;
         private readonly ILoadingService _loadingService;
+        private readonly IAssetProvider _assetProvider;
         private readonly ISceneTransition _transition;
-        private AsyncOperationHandle<SceneInstance> _currentSceneHandle;
+
+        // 存储当前场景实例，用于卸载
+        private SceneInstance _currentSceneInstance;
 
         public SceneService(
             ILogService logService,
             ILoadingService loadingService,
+            IAssetProvider assetProvider,
             ISceneTransition sceneTransition = null)
         {
             _logService = logService;
             _loadingService = loadingService;
+            _assetProvider = assetProvider;
             _transition = sceneTransition;
         }
 
@@ -39,70 +45,117 @@ namespace Core.Feature.SceneManagement.Runtime
         {
             _logService.Information(LogCategory.Core, $"开始加载场景 {sceneKey}");
 
-            using var loadingScope = _loadingService?.Begin($"加载场景 {sceneKey}");
             var transitionEvent = new SceneTransitionEvent(CurrentSceneKey, sceneKey);
+            bool loadSucceeded = false;
 
-            if (_currentSceneHandle.IsValid())
-            {
-                _loadingService?.BeginPhase("卸载当前场景");
-                await UnloadCurrentSceneAsync();
-                _loadingService?.EndPhase("卸载当前场景");
-            }
-
-            if (useLoadingScreen && _transition != null)
-            {
-                OnTransitionStarted?.Invoke(transitionEvent);
-                _loadingService?.BeginPhase("播放转场动画");
-                await _transition.PlayOutAsync(CurrentSceneKey, sceneKey, $"切换到 {sceneKey}");
-                _loadingService?.EndPhase("播放转场动画");
-            }
-            else
-            {
-                OnTransitionStarted?.Invoke(transitionEvent);
-            }
-
-            var loadSucceeded = false;
+            // -------------------------------------------------------------------------
+            // 阶段一：阻断式加载（Loading Scope）
+            // 在此作用域内，LoadingHud 会根据前台模式显示。
+            // 作用域结束时，LoadingHud 自动消失，确保不干扰后续的视觉淡入。
+            // -------------------------------------------------------------------------
             try
             {
-                _loadingService?.BeginPhase("加载场景资源");
-                var handle = Addressables.LoadSceneAsync(sceneKey, LoadSceneMode.Single);
-                var progressReporter = _loadingService?.CreateProgressReporter($"加载场景 {sceneKey}", progress) ?? progress;
-                await handle.ToUniTask(progress: progressReporter);
+                // 注意：这里使用 block scope 限制 using 的生命周期
+                using (_loadingService?.Begin($"加载场景 {sceneKey}"))
+                {
+                    if (_currentSceneInstance.Scene.IsValid())
+                    {
+                        _loadingService?.BeginPhase("卸载当前场景");
+                        await UnloadCurrentSceneAsync();
+                        _loadingService?.EndPhase("卸载当前场景");
+                    }
 
-                if (handle.Status == AsyncOperationStatus.Succeeded)
-                {
-                    _currentSceneHandle = handle;
-                    CurrentSceneKey = sceneKey;
-                    _loadingService?.EndPhase("加载场景资源");
-                    _logService.Information(LogCategory.Core, $"场景加载成功: {sceneKey}");
+                    if (useLoadingScreen && _transition != null)
+                    {
+                        OnTransitionStarted?.Invoke(transitionEvent);
+                        _loadingService?.BeginPhase("播放转场动画");
+                        await _transition.PlayOutAsync(CurrentSceneKey, sceneKey, $"切换到 {sceneKey}");
+                        _loadingService?.EndPhase("播放转场动画");
+                    }
+                    else
+                    {
+                        OnTransitionStarted?.Invoke(transitionEvent);
+                    }
+
+                    _loadingService?.BeginPhase("加载场景资源");
+
+                    var progressReporter = _loadingService?.CreateProgressReporter($"加载场景 {sceneKey}", progress) ?? progress;
+
+                    try
+                    {
+                        // 使用 IAssetProvider 加载场景
+                        var sceneInstance = await _assetProvider.LoadSceneAsync(sceneKey, LoadSceneMode.Single);
+
+                        // 加载成功
+                        _currentSceneInstance = sceneInstance;
+                        CurrentSceneKey = sceneKey;
+                        progressReporter?.Report(1.0f);
+
+                        _loadingService?.EndPhase("加载场景资源");
+                        _logService.Information(LogCategory.Core, $"场景加载成功: {sceneKey}");
+                    }
+                    catch
+                    {
+                        _loadingService?.EndPhase("加载场景资源");
+                        throw;
+                    }
+
+                    // 场景加载成功后，进行初始化等待
+                    _logService.Information(LogCategory.Core, $"[帧:{UnityEngine.Time.frameCount}] 场景加载完成 (LoadSceneAsync Done). 检查 ActiveHandler...");
+                    var readyHandler = ActiveHandler;
+
+                    if (readyHandler != null)
+                    {
+                        var startFrame = UnityEngine.Time.frameCount;
+                        _loadingService?.BeginPhase("等待场景就绪");
+                        UnityEngine.Debug.LogError($"[SceneService] [帧:{startFrame}] 找到静态注册的 Handler: {readyHandler.GetType().Name}，开始等待...");
+                        await readyHandler.WaitForSceneReadyAsync();
+                        var endFrame = UnityEngine.Time.frameCount;
+                        UnityEngine.Debug.LogError($"[SceneService] [帧:{endFrame}] 场景视觉已就绪 (耗时 {endFrame - startFrame} 帧)");
+                        _loadingService?.EndPhase("等待场景就绪");
+                    }
+                    else
+                    {
+                        // Fallback logic
+                        var method2 = UnityEngine.Object.FindObjectOfType<MonoBehaviour>() as ISceneReadyHandler;
+                        if (method2 != null)
+                        {
+                            UnityEngine.Debug.LogError($"[SceneService] [帧:{UnityEngine.Time.frameCount}] 静态注册未找到，但在场景中找到了: {method2.GetType().Name} (Fallback)");
+                            ActiveHandler = method2;
+                            await method2.WaitForSceneReadyAsync();
+                        }
+                        else
+                        {
+                            UnityEngine.Debug.LogError($"[SceneService] [帧:{UnityEngine.Time.frameCount}] 未找到任何 ISceneReadyHandler，直接开启淡入！(Bypass)");
+                        }
+                    }
+
+                    // 标记成功，允许进入阶段二
                     loadSucceeded = true;
-                }
-                else
-                {
-                    _loadingService?.EndPhase("加载场景资源");
-                    _logService.Error(LogCategory.Core, $"场景加载失败: {sceneKey}");
-                    throw new Exception($"场景加载失败: {sceneKey}");
-                }
+
+                } // <--- END USING: LoadingHud 在此处自动消失（因为 ActiveForegroundOperations 归零）
             }
             catch (Exception e)
             {
-                _loadingService?.EndPhase("加载场景资源");
                 _logService.Error(LogCategory.Core, $"场景加载发生异常: {sceneKey}", e);
                 throw;
             }
-            finally
+
+            // -------------------------------------------------------------------------
+            // 阶段二：视觉揭示（Visual Reveal）
+            // 此时 LoadingHud 已消失，转场遮罩（SortingOrder 9999）依然覆盖全屏并阻挡输入。
+            // 我们平滑地 fade in，展示新场景。
+            // -------------------------------------------------------------------------
+            if (loadSucceeded)
             {
                 if (useLoadingScreen && _transition != null)
                 {
-                    _loadingService?.BeginPhase("场景转场完成");
+                    _logService.Information(LogCategory.Core, $"[帧:{UnityEngine.Time.frameCount}] 开始播放淡入动画 (PlayInAsync)");
+                    // 注意：此时不再包裹在 Loading Scope 中，属于纯视觉过渡
                     await _transition.PlayInAsync(sceneKey, $"切换完成 {sceneKey}");
-                    _loadingService?.EndPhase("场景转场完成");
                 }
 
-                if (loadSucceeded)
-                {
-                    OnTransitionCompleted?.Invoke(transitionEvent);
-                }
+                OnTransitionCompleted?.Invoke(transitionEvent);
             }
         }
 
@@ -113,27 +166,34 @@ namespace Core.Feature.SceneManagement.Runtime
 
         private async UniTask UnloadCurrentSceneAsync()
         {
-            // 对 LoadSceneMode.Single 来说，Unity 会自动卸载当前场景；如果只剩 1 个场景，则跳过卸载，避免 “Unloading the last loaded scene” 警告。
-            if (!_currentSceneHandle.IsValid())
+            if (!_currentSceneInstance.Scene.IsValid())
             {
                 return;
             }
 
-            var sceneInstance = _currentSceneHandle.Result;
-            var scene = sceneInstance.Scene;
+            var scene = _currentSceneInstance.Scene;
 
             // 如果当前只挂着一个场景（常见于主菜单首场景），则不主动卸载。
             if (SceneManager.sceneCount <= 1 || !scene.IsValid())
             {
                 // 降级为 Debug，避免在正常流程刷屏。
                 _logService.Debug(LogCategory.Core, "跳过卸载当前场景（仅剩单场景或句柄无效）。");
-                _currentSceneHandle = default;
+                _currentSceneInstance = default;
                 return;
             }
 
             _logService.Information(LogCategory.Core, "卸载当前场景...");
-            await Addressables.UnloadSceneAsync(_currentSceneHandle);
-            _currentSceneHandle = default;
+
+            try
+            {
+                await _assetProvider.UnloadSceneAsync(_currentSceneInstance);
+            }
+            catch (Exception ex)
+            {
+                _logService.Error(LogCategory.Core, "卸载场景异常", ex);
+            }
+
+            _currentSceneInstance = default;
         }
 
         public void Dispose()

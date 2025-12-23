@@ -64,8 +64,9 @@ namespace Core.Feature.Loading.Abstractions
 
         /// <summary>
         /// 开启一个加载作用域，Dispose 时会自动结束（适用于嵌套计数）。
+        /// <param name="mode">加载模式（前台阻塞/后台静默）</param>
         /// </summary>
-        IDisposable Begin(string description = null);
+        IDisposable Begin(string description = null, LoadingMode mode = LoadingMode.Foreground);
 
         /// <summary>
         /// 报告进度并可选更新描述。

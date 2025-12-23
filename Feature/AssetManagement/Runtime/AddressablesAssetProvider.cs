@@ -5,6 +5,7 @@ using Cysharp.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.AddressableAssets;
 using UnityEngine.ResourceManagement.AsyncOperations;
+using UnityEngine.ResourceManagement.ResourceProviders; // Added this
 
 namespace Core.Feature.AssetManagement.Runtime
 {
@@ -250,6 +251,58 @@ namespace Core.Feature.AssetManagement.Runtime
             }
 
             return (T)cachedHandle.Result;
+        }
+
+        public async UniTask<SceneInstance> LoadSceneAsync(string key, UnityEngine.SceneManagement.LoadSceneMode loadMode = UnityEngine.SceneManagement.LoadSceneMode.Single, bool activateOnLoad = true, CancellationToken ct = default)
+        {
+            _logService.Information(LogCategory.Core, $"开始加载场景: {key} (Mode: {loadMode})");
+            var handle = Addressables.LoadSceneAsync(key, loadMode, activateOnLoad);
+
+            // 场景 Handle 通常不由 Cache 管理（因为 SceneService 会自己持有），
+            // 但如果在此处统一管理也可以。为防泄露，SceneService 会持有 SceneInstance，
+            // 卸载时通过 UnloadSceneAsync(SceneInstance) 回来。
+            // 这里我们暂不放入 _handleCache，以免与 Asset 混淆，且 SceneService 负责生命周期。
+
+            var registration = RegisterCancellation(key, handle, ct);
+
+            try
+            {
+                var sceneInstance = await handle.Task;
+                _logService.Information(LogCategory.Core, $"场景加载成功: {key}");
+                return sceneInstance;
+            }
+            catch (System.Exception ex)
+            {
+                _logService.Error(LogCategory.Core, $"场景加载失败: {key}", ex);
+                throw;
+            }
+            finally
+            {
+                registration.Dispose();
+            }
+        }
+
+        public async UniTask UnloadSceneAsync(SceneInstance scene, CancellationToken ct = default)
+        {
+            if (!scene.Scene.IsValid())
+            {
+                _logService.Warning(LogCategory.Core, "尝试卸载无效场景，跳过");
+                return;
+            }
+
+            _logService.Information(LogCategory.Core, $"开始卸载场景: {scene.Scene.name}");
+            var handle = Addressables.UnloadSceneAsync(scene);
+
+            try
+            {
+                await handle.Task;
+                _logService.Information(LogCategory.Core, $"场景卸载成功: {scene.Scene.name}");
+            }
+            catch (System.Exception ex)
+            {
+                _logService.Error(LogCategory.Core, $"场景卸载失败: {scene.Scene.name}", ex);
+                throw;
+            }
         }
     }
 }

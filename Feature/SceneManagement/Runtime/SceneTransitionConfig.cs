@@ -18,8 +18,8 @@ namespace Core.Feature.SceneManagement.Runtime
         public SceneTransitionMode mode = SceneTransitionMode.Cinematic;
 
         [Header("公共参数")]
-        [Range(0f, 1f)] public float overlayAlpha = 0.95f;
-        public int sortingOrder = 8000;
+        [Range(0f, 1f)] public float overlayAlpha = 1.0f;
+        public int sortingOrder = 9999;
 
         [Header("影院式（黑条 + 淡入淡出）")]
         [Range(0f, 0.5f)] public float barHeightRatio = 0.18f;
@@ -41,8 +41,8 @@ namespace Core.Feature.SceneManagement.Runtime
                 var cfg = CreateInstance<SceneTransitionConfig>();
                 cfg.enableTransition = true;
                 cfg.mode = SceneTransitionMode.Cinematic;
-                cfg.overlayAlpha = 0.95f;
-                cfg.sortingOrder = 8000;
+                cfg.overlayAlpha = 1.0f;
+                cfg.sortingOrder = 9999;
                 cfg.barHeightRatio = 0.18f;
                 cfg.barCloseDuration = 1.0f;
                 cfg.barOpenDuration = 1.0f;

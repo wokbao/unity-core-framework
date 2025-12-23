@@ -15,16 +15,19 @@ namespace Core.Feature.Loading.Runtime
         private readonly ILoadingTelemetry _telemetry;
         private readonly Dictionary<string, float> _phaseStartTimes = new();
         private int _activeOperations;
+        private int _activeForegroundOperations;
         private float _progress;
         private string _description;
         private string _currentPhase;
 
-        public LoadingState State => new(IsLoading, Progress, Description, ActiveOperations);
+        public LoadingState State => new(IsLoading, ShouldShowUi, Progress, Description, ActiveOperations);
 
         public bool IsLoading => ActiveOperations > 0;
+        public bool ShouldShowUi => ActiveForegroundOperations > 0;
         public float Progress => _progress;
         public string Description => _description;
         public int ActiveOperations => Volatile.Read(ref _activeOperations);
+        public int ActiveForegroundOperations => Volatile.Read(ref _activeForegroundOperations);
         public string CurrentPhase => _currentPhase;
 
         public event Action<LoadingState> OnStateChanged;
@@ -38,10 +41,15 @@ namespace Core.Feature.Loading.Runtime
             _telemetry = telemetry;
         }
 
-        public IDisposable Begin(string description = null)
+        public IDisposable Begin(string description = null, LoadingMode mode = LoadingMode.Foreground)
         {
             var operationId = Guid.NewGuid().ToString();
             var prevOps = Interlocked.Increment(ref _activeOperations) - 1;
+
+            if (mode == LoadingMode.Foreground)
+            {
+                Interlocked.Increment(ref _activeForegroundOperations);
+            }
 
             _telemetry?.RecordLoadingStart(operationId, description);
 
@@ -52,9 +60,10 @@ namespace Core.Feature.Loading.Runtime
             }
 
             UpdateState(Progress, description, publish: true);
-            return new LoadingScope(this, operationId, Time.realtimeSinceStartup);
+            return new LoadingScope(this, operationId, Time.realtimeSinceStartup, mode);
         }
 
+        // ... (ReportProgress, CreateProgressReporter, BeginPhase, EndPhase, ReportError unchanged) ...
         public void ReportProgress(float progress, string description = null)
         {
             UpdateState(progress, description, publish: true);
@@ -143,6 +152,7 @@ namespace Core.Feature.Loading.Runtime
                     _progress = 0f;
                     _description = null;
                     _currentPhase = null;
+                    // _activeForegroundOperations should ideally be 0 if logic is correct
                 }
             }
 
@@ -152,13 +162,22 @@ namespace Core.Feature.Loading.Runtime
             }
         }
 
-        private void EndScope(string operationId, float startTime)
+        private void EndScope(string operationId, float startTime, LoadingMode mode)
         {
             var remaining = Interlocked.Decrement(ref _activeOperations);
             if (remaining < 0)
             {
                 Interlocked.Exchange(ref _activeOperations, 0);
                 remaining = 0;
+            }
+
+            if (mode == LoadingMode.Foreground)
+            {
+                var remainingForeground = Interlocked.Decrement(ref _activeForegroundOperations);
+                if (remainingForeground < 0)
+                {
+                    Interlocked.Exchange(ref _activeForegroundOperations, 0);
+                }
             }
 
             float duration = Time.realtimeSinceStartup - startTime;
@@ -190,19 +209,21 @@ namespace Core.Feature.Loading.Runtime
             private LoadingService _owner;
             private string _operationId;
             private float _startTime;
+            private LoadingMode _mode;
 
-            public LoadingScope(LoadingService owner, string operationId, float startTime)
+            public LoadingScope(LoadingService owner, string operationId, float startTime, LoadingMode mode)
             {
                 _owner = owner;
                 _operationId = operationId;
                 _startTime = startTime;
+                _mode = mode;
             }
 
             public void Dispose()
             {
                 if (_owner != null)
                 {
-                    _owner.EndScope(_operationId, _startTime);
+                    _owner.EndScope(_operationId, _startTime, _mode);
                     _owner = null;
                 }
             }
