@@ -101,17 +101,15 @@ namespace Core.Feature.SceneManagement.Runtime
                     }
 
                     // 场景加载成功后，进行初始化等待
-                    _logService.Information(LogCategory.Core, $"[帧:{UnityEngine.Time.frameCount}] 场景加载完成 (LoadSceneAsync Done). 检查 ActiveHandler...");
+                    _logService.Information(LogCategory.Core, "场景加载资源完成，检查 ActiveHandler...");
                     var readyHandler = ActiveHandler;
 
                     if (readyHandler != null)
                     {
-                        var startFrame = UnityEngine.Time.frameCount;
                         _loadingService?.BeginPhase("等待场景就绪");
-                        UnityEngine.Debug.LogError($"[SceneService] [帧:{startFrame}] 找到静态注册的 Handler: {readyHandler.GetType().Name}，开始等待...");
+                        _logService.Information(LogCategory.Core, $"等待 ISceneReadyHandler: {readyHandler.GetType().Name}...");
                         await readyHandler.WaitForSceneReadyAsync();
-                        var endFrame = UnityEngine.Time.frameCount;
-                        UnityEngine.Debug.LogError($"[SceneService] [帧:{endFrame}] 场景视觉已就绪 (耗时 {endFrame - startFrame} 帧)");
+                        _logService.Information(LogCategory.Core, "场景视觉已就绪");
                         _loadingService?.EndPhase("等待场景就绪");
                     }
                     else
@@ -120,13 +118,13 @@ namespace Core.Feature.SceneManagement.Runtime
                         var method2 = UnityEngine.Object.FindObjectOfType<MonoBehaviour>() as ISceneReadyHandler;
                         if (method2 != null)
                         {
-                            UnityEngine.Debug.LogError($"[SceneService] [帧:{UnityEngine.Time.frameCount}] 静态注册未找到，但在场景中找到了: {method2.GetType().Name} (Fallback)");
+                            _logService.Information(LogCategory.Core, $"使用场景内找到的 Handler: {method2.GetType().Name} (Fallback)");
                             ActiveHandler = method2;
                             await method2.WaitForSceneReadyAsync();
                         }
                         else
                         {
-                            UnityEngine.Debug.LogError($"[SceneService] [帧:{UnityEngine.Time.frameCount}] 未找到任何 ISceneReadyHandler，直接开启淡入！(Bypass)");
+                            _logService.Information(LogCategory.Core, "未找到 ISceneReadyHandler，直接进入视觉揭示阶段");
                         }
                     }
 
@@ -150,7 +148,7 @@ namespace Core.Feature.SceneManagement.Runtime
             {
                 if (useLoadingScreen && _transition != null)
                 {
-                    _logService.Information(LogCategory.Core, $"[帧:{UnityEngine.Time.frameCount}] 开始播放淡入动画 (PlayInAsync)");
+                    _logService.Information(LogCategory.Core, "开始播放淡入动画 (PlayInAsync)");
                     // 注意：此时不再包裹在 Loading Scope 中，属于纯视觉过渡
                     await _transition.PlayInAsync(sceneKey, $"切换完成 {sceneKey}");
                 }
