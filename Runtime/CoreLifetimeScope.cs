@@ -32,18 +32,67 @@ namespace Core.Bootstrap
         [Tooltip("可选：配置过渡开关、方案与参数；为空则使用默认配置")]
         private SceneTransitionConfig _sceneTransitionConfig;
 
+        /// <summary>
+        /// 确保 CoreLifetimeScope 在场景切换时不被销毁
+        /// </summary>
+        protected override void Awake()
+        {
+            // 核心服务必须在整个应用生命周期内持续存在
+            DontDestroyOnLoad(gameObject);
+            Debug.Log("[CoreLifetimeScope] 已标记为 DontDestroyOnLoad，核心服务将持久化");
+
+            // 调用基类 Awake 完成 VContainer 初始化
+            base.Awake();
+        }
+
         protected override void Configure(IContainerBuilder builder)
         {
-            // 0. 加载并注册所有核心配置（同步阻塞）
-            ConfigLoadResult configResult = null;
-            if (_coreConfigManifest != null)
+            Debug.Log("[CoreLifetimeScope] === Configure 开始执行 ===");
+
+            // 0. 强制从缓存加载核心配置（必须由 Splash 场景预加载）
+            ConfigLoadResult configResult = ConfigCache.GetCoreConfigs();
+
+            if (configResult == null)
             {
-                configResult = ConfigLoader.LoadFromManifest(_coreConfigManifest);
+                // 如果缓存为空，说明没有执行 Splash 场景预加载
+#if UNITY_EDITOR
+                // 编辑器模式：允许降级到同步加载（开发便利性）
+                Debug.LogWarning("[CoreLifetimeScope] 配置缓存为空，降级到同步加载（仅开发模式）");
+                Debug.LogWarning("[CoreLifetimeScope] 正式版本必须从 Game_Splash 场景启动！");
+
+                if (_coreConfigManifest != null)
+                {
+                    configResult = ConfigLoader.LoadFromManifest(_coreConfigManifest);
+
+                    // 同时缓存，避免其他组件重复加载
+                    if (configResult != null)
+                    {
+                        ConfigCache.SetCoreConfigs(configResult);
+                    }
+                }
+                else
+                {
+                    Debug.LogError("[CoreLifetimeScope] 核心配置清单未设置，无法初始化");
+                    return;
+                }
+#else
+                // 运行时：缓存为空是严重错误
+                throw new System.InvalidOperationException(
+                    "核心配置未加载！游戏必须从 Game_Splash 场景启动。\n" +
+                    "如果是打包版本出现此错误，请检查 Build Settings 中 Game_Splash 是否为第一个场景。"
+                );
+#endif
+            }
+
+            // 注册配置到容器
+            if (configResult != null)
+            {
                 ConfigRegistry.RegisterToContainer(builder, configResult);
             }
             else
             {
-                Debug.LogWarning("[CoreLifetimeScope] 未设置核心配置清单，跳过配置加载");
+                Debug.LogError("[CoreLifetimeScope] 配置加载失败，核心服务将无法正常工作");
+                return;
             }
 
             // 1. 注册基础设施服务
@@ -113,9 +162,12 @@ namespace Core.Bootstrap
             builder.Register<SceneService>(Lifetime.Singleton)
                 .As<ISceneService>();
 
-            // 2. 核心服务初始化器
-            builder.RegisterEntryPoint<CoreBootstrapper>();
-            builder.RegisterEntryPoint<StartupRunner>();
+            // ========================================
+            // 注意：不再需要 EntryPoint
+            // ========================================
+            // CoreBootstrapper 和 StartupRunner 已废弃
+            // VContainer 会自动初始化所有注册的服务
+            // Splash 场景的 SplashBootstrapper 负责启动流程
         }
     }
 }

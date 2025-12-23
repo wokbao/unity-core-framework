@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Cysharp.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.AddressableAssets;
 using UnityEngine.ResourceManagement.AsyncOperations;
@@ -84,7 +85,7 @@ namespace Core.Runtime.Configuration
         public static ConfigLoadResult LoadFromManifest(IConfigManifest manifest)
         {
             var result = new ConfigLoadResult();
-            
+
             if (manifest == null || manifest.Entries.Count == 0)
             {
                 Debug.LogWarning("[ConfigLoader] 配置清单为空，跳过配置加载");
@@ -104,6 +105,59 @@ namespace Core.Runtime.Configuration
             {
                 var enableValidation = GetEnableValidation(manifest);
                 LoadConfigEntry(entry, result, enableValidation);
+            }
+
+            // 汇总报告
+            LogLoadingSummary(result);
+
+            return result;
+        }
+
+        /// <summary>
+        /// 异步版本：根据清单加载所有配置
+        /// </summary>
+        /// <param name="manifest">配置清单，包含所有需要加载的配置条目</param>
+        /// <param name="loadingService">可选：加载服务，用于报告进度</param>
+        /// <param name="ct">取消令牌</param>
+        /// <returns>配置加载结果，包含成功和失败的配置信息</returns>
+        public static async Cysharp.Threading.Tasks.UniTask<ConfigLoadResult> LoadFromManifestAsync(
+            IConfigManifest manifest,
+            Core.Feature.Loading.Abstractions.ILoadingService loadingService = null,
+            System.Threading.CancellationToken ct = default)
+        {
+            var result = new ConfigLoadResult();
+
+            if (manifest == null || manifest.Entries.Count == 0)
+            {
+                Debug.LogWarning("[ConfigLoader] 配置清单为空，跳过配置加载");
+                return result;
+            }
+
+            // 过滤并按优先级排序
+            var sortedEntries = manifest.Entries
+                .Where(ShouldLoadEntry)
+                .OrderBy(e => e.Priority)
+                .ToList();
+
+            Debug.Log($"[ConfigLoader] 开始异步加载 {sortedEntries.Count} 个配置...");
+
+            // ⚠️ 关键：调用 Begin() 来触发 LoadingService.IsLoading = true
+            // 这会让 LoadingHud 显示出来
+            using var loadingScope = loadingService?.Begin("加载配置");
+
+            // 异步批量加载
+            var enableValidation = GetEnableValidation(manifest);
+            for (int i = 0; i < sortedEntries.Count; i++)
+            {
+                var entry = sortedEntries[i];
+
+                // 报告细粒度进度
+                var progress = (float)(i + 1) / sortedEntries.Count;
+                var desc = $"加载配置 {entry.Name} ({i + 1}/{sortedEntries.Count})";
+                loadingService?.ReportProgress(progress, desc);
+
+                // 异步加载单个配置
+                await LoadConfigEntryAsync(entry, result, enableValidation, ct);
             }
 
             // 汇总报告
@@ -137,13 +191,13 @@ namespace Core.Runtime.Configuration
 
                 // 使用反射调用泛型方法
                 var method = typeof(ConfigLoader).GetMethod(
-                    nameof(LoadConfigGeneric), 
+                    nameof(LoadConfigGeneric),
                     System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static
                 );
                 var genericMethod = method.MakeGenericMethod(configType);
-                
+
                 var config = genericMethod.Invoke(null, new object[] { entry, enableValidation });
-                
+
                 if (config != null)
                 {
                     result.LoadedConfigs[entry.Name] = config;
@@ -157,10 +211,58 @@ namespace Core.Runtime.Configuration
             catch (Exception ex)
             {
                 result.FailedConfigs.Add(entry.Name);
-                
+
                 var logLevel = entry.IsRequired ? LogType.Error : LogType.Warning;
-                Debug.LogFormat(logLevel, LogOption.NoStacktrace, null, 
+                Debug.LogFormat(logLevel, LogOption.NoStacktrace, null,
                     "[ConfigLoader] ✗ 加载失败: {0} - {1}", entry.Name, ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// 异步加载单个配置条目
+        /// </summary>
+        private static async Cysharp.Threading.Tasks.UniTask LoadConfigEntryAsync(
+            ConfigManifest.ConfigEntry entry,
+            ConfigLoadResult result,
+            bool enableValidation,
+            System.Threading.CancellationToken ct)
+        {
+            try
+            {
+                // 解析类型
+                var configType = Type.GetType(entry.ConfigTypeName);
+                if (configType == null)
+                {
+                    throw new Exception($"无法找到类型: {entry.ConfigTypeName}");
+                }
+
+                // 检查是否继承自 ScriptableObject
+                if (!typeof(ScriptableObject).IsAssignableFrom(configType))
+                {
+                    throw new Exception($"配置类型 {entry.ConfigTypeName} 必须继承自 ScriptableObject");
+                }
+
+                // 直接使用 Addressables 异步加载（避免反射的复杂性）
+                var handle = Addressables.LoadAssetAsync<ScriptableObject>(entry.AddressableKey);
+
+                // 等待加载完成
+                var config = await handle.ToUniTask(cancellationToken: ct);
+
+                if (config == null)
+                {
+                    throw new Exception($"Addressables 加载返回 null，Key: {entry.AddressableKey}");
+                }
+
+                result.LoadedConfigs[entry.Name] = config;
+                Debug.Log($"[ConfigLoader] ✓ 异步加载成功: {entry.Name} ({configType.Name})");
+            }
+            catch (Exception ex)
+            {
+                result.FailedConfigs.Add(entry.Name);
+
+                var logLevel = entry.IsRequired ? LogType.Error : LogType.Warning;
+                Debug.LogFormat(logLevel, LogOption.NoStacktrace, null,
+                    "[ConfigLoader] ✗ 异步加载失败: {0} - {1}", entry.Name, ex.Message);
             }
         }
 
@@ -169,7 +271,7 @@ namespace Core.Runtime.Configuration
         /// </summary>
         private static TConfig LoadConfigGeneric<TConfig>(
             ConfigManifest.ConfigEntry entry,
-            bool enableValidation) 
+            bool enableValidation)
             where TConfig : ScriptableObject
         {
             // 从 Addressables 加载
@@ -193,9 +295,38 @@ namespace Core.Runtime.Configuration
         }
 
         /// <summary>
+        /// 异步泛型配置加载方法（通过反射调用）
+        /// </summary>
+        private static async Cysharp.Threading.Tasks.UniTask<TConfig> LoadConfigGenericAsync<TConfig>(
+            ConfigManifest.ConfigEntry entry,
+            bool enableValidation,
+            System.Threading.CancellationToken ct)
+            where TConfig : ScriptableObject
+        {
+            // 从 Addressables 异步加载
+            var handle = Addressables.LoadAssetAsync<TConfig>(entry.AddressableKey);
+            var config = await handle.ToUniTask(cancellationToken: ct);
+
+            if (handle.Status != AsyncOperationStatus.Succeeded || config == null)
+            {
+                Debug.LogWarning($"[ConfigLoader] Addressables 异步加载失败: {entry.Name}，尝试创建默认配置");
+                // 尝试创建默认配置
+                return TryCreateDefaultConfig<TConfig>(entry.Name);
+            }
+
+            // 配置验证
+            if (enableValidation)
+            {
+                ValidateConfig(config, entry.Name);
+            }
+
+            return config;
+        }
+
+        /// <summary>
         /// 创建默认配置
         /// </summary>
-        private static TConfig TryCreateDefaultConfig<TConfig>(string configName) 
+        private static TConfig TryCreateDefaultConfig<TConfig>(string configName)
             where TConfig : ScriptableObject
         {
             try
@@ -273,12 +404,12 @@ namespace Core.Runtime.Configuration
 
             Debug.Log("[ConfigLoader] === 配置加载完成 ===");
             Debug.Log($"[ConfigLoader] 总计: {total} | 成功: {result.LoadedConfigs.Count} | 失败: {result.FailedConfigs.Count} | 成功率: {successRate}%");
-            
+
             if (result.LoadedConfigs.Count > 0)
             {
                 Debug.Log($"[ConfigLoader] 已加载配置: {string.Join(", ", result.LoadedConfigs.Keys)}");
             }
-            
+
             if (result.FailedConfigs.Count > 0)
             {
                 Debug.LogWarning($"[ConfigLoader] 失败配置: {string.Join(", ", result.FailedConfigs)}");
