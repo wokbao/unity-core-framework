@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using Core.Feature.AssetManagement.Runtime;
+using Core.Feature.Logging.Abstractions;
 using Core.Feature.ObjectPooling.Abstractions;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
@@ -14,6 +16,9 @@ namespace Core.Feature.ObjectPooling.Runtime
     /// </summary>
     public sealed class ObjectPoolManager : IObjectPoolManager, IDisposable
     {
+        private readonly IAssetProvider _assetProvider;
+        private readonly ILogService _logService;
+
         /// <summary>
         /// 存储普通 C# 对象的对象池字典，键为对象类型，值为对应的对象池实例
         /// </summary>
@@ -33,6 +38,12 @@ namespace Core.Feature.ObjectPooling.Runtime
         /// Addressable Key 到预制体的缓存映射
         /// </summary>
         private readonly Dictionary<string, GameObject> _addressableCache = new();
+
+        public ObjectPoolManager(IAssetProvider assetProvider, ILogService logService)
+        {
+            _assetProvider = assetProvider;
+            _logService = logService;
+        }
 
         /// <summary>
         /// 从对象池中租借一个指定类型的普通 C# 对象
@@ -83,7 +94,7 @@ namespace Core.Feature.ObjectPooling.Runtime
         /// <param name="worldPositionStays">设置父变换时是否保持世界位置不变（可选，默认为 false）</param>
         /// <returns>租借到的 GameObject 实例</returns>
         /// <exception cref="ArgumentNullException">当 prefab 为 null 时抛出</exception>
-        public GameObject Rent(GameObject prefab, Transform parent = null, bool worldPositionStays = false, 
+        public GameObject Rent(GameObject prefab, Transform parent = null, bool worldPositionStays = false,
                                Action<GameObject> onReset = null, int maxCapacity = 50)
         {
             if (prefab == null) throw new ArgumentNullException(nameof(prefab), "预制体不能为 null");
@@ -116,7 +127,7 @@ namespace Core.Feature.ObjectPooling.Runtime
             }
 
             // 如果未找到归属的对象池，直接销毁该实例以避免内存泄漏
-            UnityEngine.Debug.LogWarning($"[对象池] 归还的对象 {instance.name} 不属于任何对象池，已销毁");
+            _logService?.Warning(LogCategory.Core, $"[对象池] 归还的对象 {instance.name} 不属于任何对象池，已销毁");
             instance.SetActive(false);
             UnityEngine.Object.Destroy(instance);
         }
@@ -129,10 +140,10 @@ namespace Core.Feature.ObjectPooling.Runtime
         /// <param name="parent">实例化时的父变换（可选）</param>
         /// <param name="worldPositionStays">设置父变换时是否保持世界位置不变（可选，默认为 false）</param>
         /// <exception cref="ArgumentNullException">当 prefab 为 null 时抛出</exception>
-        public async UniTask<GameObject> RentAsync(string addressableKey, Transform parent = null, 
-                                                     bool worldPositionStays = false, 
-                                                     Action<GameObject> onReset = null, 
-                                                     int maxCapacity = 50, 
+        public async UniTask<GameObject> RentAsync(string addressableKey, Transform parent = null,
+                                                     bool worldPositionStays = false,
+                                                     Action<GameObject> onReset = null,
+                                                     int maxCapacity = 50,
                                                      CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(addressableKey))
@@ -141,13 +152,12 @@ namespace Core.Feature.ObjectPooling.Runtime
             // 检查缓存
             if (!_addressableCache.TryGetValue(addressableKey, out var prefab))
             {
-                // 【优化5：异步支持】从 Addressables 加载
-                var handle = Addressables.LoadAssetAsync<GameObject>(addressableKey);
-                prefab = await handle.ToUniTask(cancellationToken: ct);
-                
+                // 【优化5：异步支持】通过 IAssetProvider 加载
+                prefab = await _assetProvider.LoadAssetAsync<GameObject>(addressableKey, ct);
+
                 if (prefab == null)
                     throw new InvalidOperationException($"无法从 Addressable Key '{addressableKey}' 加载预制体");
-                
+
                 _addressableCache[addressableKey] = prefab;
             }
 
@@ -178,17 +188,17 @@ namespace Core.Feature.ObjectPooling.Runtime
         {
             if (prefab == null) throw new ArgumentNullException(nameof(prefab), "预制体不能为 null");
             var key = prefab.GetInstanceID();
-            
-            return _prefabPools.TryGetValue(key, out var pool) 
-                ? pool.GetStatistics() 
+
+            return _prefabPools.TryGetValue(key, out var pool)
+                ? pool.GetStatistics()
                 : default;
         }
 
         public PoolStatistics GetStatistics<T>()
         {
             var type = typeof(T);
-            return _objectPools.TryGetValue(type, out var pool) 
-                ? ((ObjectPool<T>)pool).GetStatistics() 
+            return _objectPools.TryGetValue(type, out var pool)
+                ? ((ObjectPool<T>)pool).GetStatistics()
                 : default;
         }
 
@@ -209,11 +219,11 @@ namespace Core.Feature.ObjectPooling.Runtime
             // 清空游戏对象池字典和反向映射
             _prefabPools.Clear();
             _instanceToPool.Clear();
-            
+
             // 释放 Addressables 缓存
             foreach (var key in _addressableCache.Keys)
             {
-                Addressables.Release(_addressableCache[key]);
+                _assetProvider.Release(key);
             }
             _addressableCache.Clear();
         }
@@ -243,12 +253,12 @@ namespace Core.Feature.ObjectPooling.Runtime
             private readonly Func<T> _factory;
             private readonly Action<T> _onRent;
             private readonly Action<T> _onReturn;
-            
+
             /// <summary>
             /// 【优化2：容量限制】池的最大容量
             /// </summary>
             private readonly int _maxCapacity;
-            
+
             /// <summary>
             /// 【优化4：统计信息】
             /// </summary>
@@ -277,7 +287,7 @@ namespace Core.Feature.ObjectPooling.Runtime
             public T Rent()
             {
                 _rentCount++;
-                
+
                 T instance;
                 if (_stack.Count > 0)
                 {
@@ -333,17 +343,17 @@ namespace Core.Feature.ObjectPooling.Runtime
             private readonly Stack<GameObject> _stack = new();
             private readonly Transform _defaultParent;
             private readonly bool _defaultWorldPositionStays;
-            
+
             /// <summary>
             /// 【优化3：重置回调】对象归还时的重置回调
             /// </summary>
             private readonly Action<GameObject> _onReset;
-            
+
             /// <summary>
             /// 【优化2：容量限制】池的最大容量
             /// </summary>
             private readonly int _maxCapacity;
-            
+
             /// <summary>
             /// 【优化4：统计信息】
             /// </summary>
@@ -357,7 +367,7 @@ namespace Core.Feature.ObjectPooling.Runtime
             /// <param name="prefab">用于创建实例的预制体</param>
             /// <param name="parent">默认的父变换</param>
             /// <param name="worldPositionStays">默认的世界位置保持设置</param>
-            public GameObjectPool(ObjectPoolManager manager, GameObject prefab, Transform parent, 
+            public GameObjectPool(ObjectPoolManager manager, GameObject prefab, Transform parent,
                                   bool worldPositionStays, Action<GameObject> onReset, int maxCapacity)
             {
                 _manager = manager;
@@ -377,7 +387,7 @@ namespace Core.Feature.ObjectPooling.Runtime
             public GameObject Rent(Transform parent, bool worldPositionStays)
             {
                 _rentCount++;
-                
+
                 GameObject instance;
                 if (_stack.Count > 0)
                 {
@@ -408,10 +418,10 @@ namespace Core.Feature.ObjectPooling.Runtime
 
                 _returnCount++;
                 instance.SetActive(false);
-                
+
                 // 【优化3：重置回调】归还时重置对象状态
                 _onReset?.Invoke(instance);
-                
+
                 instance.transform.SetParent(_defaultParent, _defaultWorldPositionStays);
 
                 // 【优化2：容量限制】超过容量则销毁，不缓存
@@ -502,7 +512,7 @@ namespace Core.Feature.ObjectPooling.Runtime
 
                 _totalCreated++;
                 _all.Add(instance);
-                
+
                 // 【优化1：反向映射】注册实例到池的映射
                 _manager._instanceToPool[instance] = this;
 

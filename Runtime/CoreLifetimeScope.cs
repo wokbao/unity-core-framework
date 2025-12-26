@@ -102,6 +102,10 @@ namespace Core.Bootstrap
             builder.Register<LogService>(Lifetime.Singleton)
                 .As<ILogService>();
 
+            // 资源管理 (最优先，被对象池等依赖)
+            builder.Register<AddressablesAssetProvider>(Lifetime.Singleton)
+                .As<IAssetProvider>();
+
             // 对象池
             builder.Register<ObjectPoolManager>(Lifetime.Singleton)
                 .As<IObjectPoolManager>();
@@ -117,10 +121,6 @@ namespace Core.Bootstrap
             // 加载状态
             builder.Register<LoadingService>(Lifetime.Singleton)
                 .As<ILoadingService>();
-
-            // 资源管理
-            builder.Register<AddressablesAssetProvider>(Lifetime.Singleton)
-                .As<IAssetProvider>();
 
             // 场景管理
             var sceneTransitionConfig = _sceneTransitionConfig != null

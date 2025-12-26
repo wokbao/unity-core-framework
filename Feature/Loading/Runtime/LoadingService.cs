@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using Core.Feature.Loading.Abstractions;
+using Core.Feature.Logging.Abstractions;
 using UnityEngine;
 
 namespace Core.Feature.Loading.Runtime
@@ -13,6 +14,7 @@ namespace Core.Feature.Loading.Runtime
     {
         private readonly object _lock = new();
         private readonly ILoadingTelemetry _telemetry;
+        private readonly ILogService _logService;
         private readonly Dictionary<string, float> _phaseStartTimes = new();
         private int _activeOperations;
         private int _activeForegroundOperations;
@@ -36,9 +38,10 @@ namespace Core.Feature.Loading.Runtime
         public event Action<string> OnPhaseChanged;
         public event Action<Exception> OnLoadingError;
 
-        public LoadingService(ILoadingTelemetry telemetry = null)
+        public LoadingService(ILoadingTelemetry telemetry, ILogService logService)
         {
             _telemetry = telemetry;
+            _logService = logService;
         }
 
         public IDisposable Begin(string description = null, LoadingMode mode = LoadingMode.Foreground)
@@ -63,7 +66,6 @@ namespace Core.Feature.Loading.Runtime
             return new LoadingScope(this, operationId, Time.realtimeSinceStartup, mode);
         }
 
-        // ... (ReportProgress, CreateProgressReporter, BeginPhase, EndPhase, ReportError unchanged) ...
         public void ReportProgress(float progress, string description = null)
         {
             UpdateState(progress, description, publish: true);
@@ -82,7 +84,7 @@ namespace Core.Feature.Loading.Runtime
         {
             if (string.IsNullOrEmpty(phaseName))
             {
-                Debug.LogWarning("尝试开始一个空阶段名称，已忽略");
+                _logService?.Warning(LogCategory.Core, "尝试开始一个空阶段名称，已忽略");
                 return;
             }
 
@@ -101,7 +103,7 @@ namespace Core.Feature.Loading.Runtime
         {
             if (string.IsNullOrEmpty(phaseName))
             {
-                Debug.LogWarning("尝试结束一个空阶段名称，已忽略");
+                _logService?.Warning(LogCategory.Core, "尝试结束一个空阶段名称，已忽略");
                 return;
             }
 
@@ -128,11 +130,11 @@ namespace Core.Feature.Loading.Runtime
         {
             if (exception == null)
             {
-                Debug.LogWarning("尝试报告 null 异常，已忽略");
+                _logService?.Warning(LogCategory.Core, "尝试报告 null 异常，已忽略");
                 return;
             }
 
-            Debug.LogError($"加载过程中发生错误：{exception.Message}\n{exception.StackTrace}");
+            _logService?.Error(LogCategory.Core, $"加载过程中发生错误：{exception.Message}", exception);
             OnLoadingError?.Invoke(exception);
         }
 
