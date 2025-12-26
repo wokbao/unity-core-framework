@@ -242,7 +242,8 @@ namespace Core.Runtime.Configuration
                     throw new Exception($"配置类型 {entry.ConfigTypeName} 必须继承自 ScriptableObject");
                 }
 
-                // 直接使用 Addressables 异步加载（避免反射的复杂性）
+                // ⚠️ 规范豁免：ConfigLoader 在 DI 容器构建前运行，允许直接调用 Addressables
+                // 业务代码必须使用 IAssetProvider 接口
                 var handle = Addressables.LoadAssetAsync<ScriptableObject>(entry.AddressableKey);
 
                 // 等待加载完成
@@ -274,7 +275,8 @@ namespace Core.Runtime.Configuration
             bool enableValidation)
             where TConfig : ScriptableObject
         {
-            // 从 Addressables 加载
+            // ⚠️ 规范豁免：ConfigLoader 在 DI 容器构建前运行，允许直接调用 Addressables
+            // 业务代码必须使用 IAssetProvider 接口
             var handle = Addressables.LoadAssetAsync<TConfig>(entry.AddressableKey);
             var config = handle.WaitForCompletion();
 
@@ -303,7 +305,8 @@ namespace Core.Runtime.Configuration
             System.Threading.CancellationToken ct)
             where TConfig : ScriptableObject
         {
-            // 从 Addressables 异步加载
+            // ⚠️ 规范豁免：ConfigLoader 在 DI 容器构建前运行，允许直接调用 Addressables
+            // 业务代码必须使用 IAssetProvider 接口
             var handle = Addressables.LoadAssetAsync<TConfig>(entry.AddressableKey);
             var config = await handle.ToUniTask(cancellationToken: ct);
 
