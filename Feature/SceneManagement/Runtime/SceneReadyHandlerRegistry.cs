@@ -1,3 +1,5 @@
+using Core.Feature.Logging.Abstractions;
+
 namespace Core.Feature.SceneManagement.Runtime
 {
     /// <summary>
@@ -9,16 +11,22 @@ namespace Core.Feature.SceneManagement.Runtime
     /// </summary>
     public sealed class SceneReadyHandlerRegistry : Abstractions.ISceneReadyHandlerRegistry
     {
+        private readonly ILogService _logService;
         private Abstractions.ISceneReadyHandler _currentHandler;
 
         public Abstractions.ISceneReadyHandler CurrentHandler => _currentHandler;
+
+        public SceneReadyHandlerRegistry(ILogService logService)
+        {
+            _logService = logService;
+        }
 
         public void Register(Abstractions.ISceneReadyHandler handler)
         {
             if (handler == null) return;
 
             _currentHandler = handler;
-            UnityEngine.Debug.Log($"[SceneReadyHandlerRegistry] 已注册 Handler：{handler.GetType().Name}");
+            _logService?.Debug(LogCategory.Core, $"已注册 SceneReadyHandler：{handler.GetType().Name}");
         }
 
         public void Unregister(Abstractions.ISceneReadyHandler handler)
@@ -26,7 +34,7 @@ namespace Core.Feature.SceneManagement.Runtime
             if (_currentHandler == handler)
             {
                 _currentHandler = null;
-                UnityEngine.Debug.Log($"[SceneReadyHandlerRegistry] 已取消注册 Handler：{handler.GetType().Name}");
+                _logService?.Debug(LogCategory.Core, $"已取消注册 SceneReadyHandler：{handler.GetType().Name}");
             }
         }
     }
