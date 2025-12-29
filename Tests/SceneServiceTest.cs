@@ -18,7 +18,7 @@ namespace Core.Tests
             if (_sceneService != null)
             {
                 Debug.Log($"✅ ISceneService 注入成功！当前场景: {_sceneService.CurrentSceneKey}");
-                
+
                 // 可以在这里测试加载其他场景
                 // await _sceneService.LoadSceneAsync("YourSceneName");
             }

@@ -435,12 +435,12 @@ namespace Core.Runtime.Configuration
         /// <summary>
         /// 成功加载的配置字典（配置名 -> 配置实例）
         /// </summary>
-        public Dictionary<string, object> LoadedConfigs = new();
+        public Dictionary<string, object> LoadedConfigs { get; } = new();
 
         /// <summary>
         /// 加载失败的配置名称列表
         /// </summary>
-        public List<string> FailedConfigs = new();
+        public List<string> FailedConfigs { get; } = new();
 
         /// <summary>
         /// 是否所有配置都加载成功

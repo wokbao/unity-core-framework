@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 using Core.Feature.Logging.Abstractions;
 
 namespace Core.Feature.Logging.ScriptableObjects
@@ -12,13 +12,16 @@ namespace Core.Feature.Logging.ScriptableObjects
         order = 1)]
     public sealed class LoggingConfig : ScriptableObject
     {
-        [Header("全局最小等级")] [Tooltip("低于此等级的日志将被忽略")]
+        [Header("全局最小等级")]
+        [Tooltip("低于此等级的日志将被忽略")]
         public LogLevel minimumLogLevel = LogLevel.Debug;
 
-        [Header("分类覆盖（可选）")] [Tooltip("为指定分类单独设置开关和最小等级")]
+        [Header("分类覆盖（可选）")]
+        [Tooltip("为指定分类单独设置开关和最小等级")]
         public LogCategoryOverride[] categoryOverrides = new LogCategoryOverride[0];
 
-        [Header("输出通道")] [Tooltip("是否输出到 Unity 控制台 (UnityLogSink)")]
+        [Header("输出通道")]
+        [Tooltip("是否输出到 Unity 控制台 (UnityLogSink)")]
         public bool enableUnityConsoleOutput = true;
 
         [Tooltip("是否输出到文件（如 FileLogSink）")] public bool enableFileOutput = false;

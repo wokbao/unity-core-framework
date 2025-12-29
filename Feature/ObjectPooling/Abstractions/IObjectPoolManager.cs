@@ -25,16 +25,16 @@ namespace Core.Feature.ObjectPooling.Abstractions
         /// </summary>
         /// <param name="onReset">对象归还时的重置回调（可选）</param>
         /// <param name="maxCapacity">池的最大容量（默认 50）</param>
-        GameObject Rent(GameObject prefab, Transform parent = null, bool worldPositionStays = false, 
+        GameObject Rent(GameObject prefab, Transform parent = null, bool worldPositionStays = false,
                         Action<GameObject> onReset = null, int maxCapacity = 50);
 
         /// <summary>
         /// 异步租借 GameObject（从 Addressables 加载）
         /// </summary>
-        UniTask<GameObject> RentAsync(string addressableKey, Transform parent = null, 
-                                       bool worldPositionStays = false, 
-                                       Action<GameObject> onReset = null, 
-                                       int maxCapacity = 50, 
+        UniTask<GameObject> RentAsync(string addressableKey, Transform parent = null,
+                                       bool worldPositionStays = false,
+                                       Action<GameObject> onReset = null,
+                                       int maxCapacity = 50,
                                        System.Threading.CancellationToken ct = default);
 
         /// <summary>

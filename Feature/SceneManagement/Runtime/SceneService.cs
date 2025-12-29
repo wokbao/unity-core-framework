@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using Core.Feature.Loading.Abstractions;
 using Core.Feature.Logging.Abstractions;
 using Core.Feature.SceneManagement.Abstractions;
@@ -17,14 +18,13 @@ namespace Core.Feature.SceneManagement.Runtime
     {
         public string CurrentSceneKey { get; private set; }
         public event Action<SceneTransitionEvent> OnTransitionStarted;
-        // 静态注册点，确保 100% 能找到 Handler，绕过 FindObjectOfType 的潜在问题
-        public static ISceneReadyHandler ActiveHandler;
         public event Action<SceneTransitionEvent> OnTransitionCompleted;
 
         private readonly ILogService _logService;
         private readonly ILoadingService _loadingService;
         private readonly IAssetProvider _assetProvider;
         private readonly ISceneTransition _transition;
+        private readonly ISceneReadyHandlerRegistry _handlerRegistry;
 
         // 存储当前场景实例，用于卸载
         private SceneInstance _currentSceneInstance;
@@ -33,15 +33,17 @@ namespace Core.Feature.SceneManagement.Runtime
             ILogService logService,
             ILoadingService loadingService,
             IAssetProvider assetProvider,
+            ISceneReadyHandlerRegistry handlerRegistry,
             ISceneTransition sceneTransition = null)
         {
             _logService = logService;
             _loadingService = loadingService;
             _assetProvider = assetProvider;
+            _handlerRegistry = handlerRegistry;
             _transition = sceneTransition;
         }
 
-        public async UniTask LoadSceneAsync(string sceneKey, bool useLoadingScreen = true, IProgress<float> progress = null)
+        public async UniTask LoadSceneAsync(string sceneKey, bool useLoadingScreen = true, IProgress<float> progress = null, CancellationToken ct = default)
         {
             _logService.Information(LogCategory.Core, $"开始加载场景 {sceneKey}");
 
@@ -61,7 +63,7 @@ namespace Core.Feature.SceneManagement.Runtime
                     if (_currentSceneInstance.Scene.IsValid())
                     {
                         _loadingService?.BeginPhase("卸载当前场景");
-                        await UnloadCurrentSceneAsync();
+                        await UnloadCurrentSceneAsync(ct);
                         _loadingService?.EndPhase("卸载当前场景");
                     }
 
@@ -84,7 +86,7 @@ namespace Core.Feature.SceneManagement.Runtime
                     try
                     {
                         // 使用 IAssetProvider 加载场景
-                        var sceneInstance = await _assetProvider.LoadSceneAsync(sceneKey, LoadSceneMode.Single);
+                        var sceneInstance = await _assetProvider.LoadSceneAsync(sceneKey, LoadSceneMode.Single, true, ct);
 
                         // 加载成功
                         _currentSceneInstance = sceneInstance;
@@ -101,8 +103,8 @@ namespace Core.Feature.SceneManagement.Runtime
                     }
 
                     // 场景加载成功后，进行初始化等待
-                    _logService.Information(LogCategory.Core, "场景加载资源完成，检查 ActiveHandler...");
-                    var readyHandler = ActiveHandler;
+                    _logService.Information(LogCategory.Core, "场景加载资源完成，检查 SceneReadyHandler...");
+                    var readyHandler = _handlerRegistry?.CurrentHandler;
 
                     if (readyHandler != null)
                     {
@@ -114,13 +116,13 @@ namespace Core.Feature.SceneManagement.Runtime
                     }
                     else
                     {
-                        // Fallback logic
-                        var method2 = UnityEngine.Object.FindObjectOfType<MonoBehaviour>() as ISceneReadyHandler;
-                        if (method2 != null)
+                        // Fallback: FindObjectOfType 作为备用方案
+                        var fallbackHandler = UnityEngine.Object.FindObjectOfType<MonoBehaviour>() as ISceneReadyHandler;
+                        if (fallbackHandler != null)
                         {
-                            _logService.Information(LogCategory.Core, $"使用场景内找到的 Handler: {method2.GetType().Name} (Fallback)");
-                            ActiveHandler = method2;
-                            await method2.WaitForSceneReadyAsync();
+                            _logService.Information(LogCategory.Core, $"使用场景内找到的 Handler: {fallbackHandler.GetType().Name} (Fallback)");
+                            _handlerRegistry?.Register(fallbackHandler);
+                            await fallbackHandler.WaitForSceneReadyAsync();
                         }
                         else
                         {
@@ -157,12 +159,12 @@ namespace Core.Feature.SceneManagement.Runtime
             }
         }
 
-        public async UniTask UnloadSceneAsync(string sceneKey)
+        public async UniTask UnloadSceneAsync(string sceneKey, CancellationToken ct = default)
         {
             await UniTask.CompletedTask;
         }
 
-        private async UniTask UnloadCurrentSceneAsync()
+        private async UniTask UnloadCurrentSceneAsync(CancellationToken ct = default)
         {
             if (!_currentSceneInstance.Scene.IsValid())
             {
@@ -184,7 +186,7 @@ namespace Core.Feature.SceneManagement.Runtime
 
             try
             {
-                await _assetProvider.UnloadSceneAsync(_currentSceneInstance);
+                await _assetProvider.UnloadSceneAsync(_currentSceneInstance, ct);
             }
             catch (Exception ex)
             {

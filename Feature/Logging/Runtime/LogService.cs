@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using Core.Feature.Logging.Abstractions;
@@ -17,17 +17,17 @@ namespace Core.Feature.Logging.Runtime
         /// 存储所有日志接收器的列表
         /// </summary>
         private readonly IList<ILogSink> _logSinks;
-        
+
         /// <summary>
         /// 用于广播日志条目的Reactive Subject
         /// </summary>
         private readonly Subject<LogEntry> _subject;
-        
+
         /// <summary>
         /// 全局最小日志等级，低于此等级的日志将被过滤
         /// </summary>
         private readonly LogLevel _globalMinimumLevel;
-        
+
         /// <summary>
         /// 按日志类别存储的特定规则字典
         /// </summary>
@@ -234,7 +234,7 @@ namespace Core.Feature.Logging.Runtime
             /// 是否启用此类别
             /// </summary>
             public readonly bool Enabled;
-            
+
             /// <summary>
             /// 此类别允许的最小日志级别
             /// </summary>

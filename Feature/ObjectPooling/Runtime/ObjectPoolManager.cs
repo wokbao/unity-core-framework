@@ -6,7 +6,6 @@ using Core.Feature.Logging.Abstractions;
 using Core.Feature.ObjectPooling.Abstractions;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
-using UnityEngine.AddressableAssets;
 
 namespace Core.Feature.ObjectPooling.Runtime
 {

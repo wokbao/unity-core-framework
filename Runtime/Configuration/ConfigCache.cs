@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using UnityEngine;
 
 namespace Core.Runtime.Configuration
@@ -78,7 +77,7 @@ namespace Core.Runtime.Configuration
         {
             _coreConfigs = null;
             _gameConfigs = null;
-           _isCoreLoaded = false;
+            _isCoreLoaded = false;
             _isGameLoaded = false;
             Debug.Log("[ConfigCache] 配置缓存已清空");
         }

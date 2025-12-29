@@ -9,7 +9,6 @@ using Core.Feature.SceneManagement.Abstractions;
 using Core.Feature.SceneManagement.Runtime;
 using Core.Feature.EventBus.Abstractions;
 using Core.Feature.EventBus.Runtime;
-using Core.Runtime.Startup;
 using Core.Runtime.Configuration;
 using UnityEngine;
 using VContainer;
@@ -158,6 +157,10 @@ namespace Core.Bootstrap
 
             builder.Register<SceneTransitionSelector>(Lifetime.Singleton)
                 .As<ISceneTransition>();
+
+            // 场景就绪处理器注册器（替代静态字段）
+            builder.Register<SceneReadyHandlerRegistry>(Lifetime.Singleton)
+                .As<Core.Feature.SceneManagement.Abstractions.ISceneReadyHandlerRegistry>();
 
             builder.Register<SceneService>(Lifetime.Singleton)
                 .As<ISceneService>();
