@@ -34,6 +34,11 @@ namespace Core.Feature.Logging.Runtime
         private readonly Dictionary<LogCategory, CategoryRule> _categoryRules;
 
         /// <summary>
+        /// 标记服务是否已被释放
+        /// </summary>
+        private bool _isDisposed;
+
+        /// <summary>
         /// 获取可观察的日志流，允许订阅所有日志条目
         /// </summary>
         public Observable<LogEntry> LogStream => _subject;
@@ -160,6 +165,12 @@ namespace Core.Feature.Logging.Runtime
             string callerMemberName = "",
             int callerLineNumber = 0)
         {
+            // 已释放保护：避免在应用退出时访问已释放的 Subject
+            if (_isDisposed)
+            {
+                return;
+            }
+
             // 全局等级过滤
             if (level < _globalMinimumLevel)
             {
@@ -257,6 +268,12 @@ namespace Core.Feature.Logging.Runtime
         /// </summary>
         public void Dispose()
         {
+            if (_isDisposed)
+            {
+                return;
+            }
+
+            _isDisposed = true;
             _subject?.OnCompleted();
             _subject?.Dispose();
         }
