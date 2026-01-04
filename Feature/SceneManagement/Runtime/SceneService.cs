@@ -85,8 +85,25 @@ namespace Core.Feature.SceneManagement.Runtime
 
                     try
                     {
+                        // 根据当前场景状态选择加载模式：
+                        // - 有效 SceneInstance（正常流程）→ Single 模式替换
+                        // - 无效（首次从编辑器启动）→ Additive 模式避免卸载错误
+                        var useAdditive = !_currentSceneInstance.Scene.IsValid();
+                        var loadMode = useAdditive ? LoadSceneMode.Additive : LoadSceneMode.Single;
+
+                        // 记录当前活动场景（Additive 模式需要在加载后卸载）
+                        var previousScene = useAdditive ? SceneManager.GetActiveScene() : default;
+
                         // 使用 IAssetProvider 加载场景
-                        var sceneInstance = await _assetProvider.LoadSceneAsync(sceneKey, LoadSceneMode.Single, true, ct);
+                        var sceneInstance = await _assetProvider.LoadSceneAsync(sceneKey, loadMode, true, ct);
+
+                        // 如果使用 Additive 模式，需要手动卸载旧场景
+                        if (useAdditive && previousScene.IsValid() && previousScene != sceneInstance.Scene)
+                        {
+                            _logService.Information(LogCategory.Core, $"卸载旧场景: {previousScene.name}");
+                            SceneManager.SetActiveScene(sceneInstance.Scene);
+                            await SceneManager.UnloadSceneAsync(previousScene);
+                        }
 
                         // 加载成功
                         _currentSceneInstance = sceneInstance;
