@@ -4,6 +4,8 @@ using Core.Feature.Loading.Abstractions;
 using Core.Feature.Logging.Abstractions;
 using Core.Feature.SceneManagement.Abstractions;
 using Core.Feature.AssetManagement.Runtime;
+using Core.Feature.Localization.Abstractions;
+using Core.Feature.Loading.Runtime;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.ResourceManagement.ResourceProviders;
@@ -15,6 +17,12 @@ namespace Core.Feature.SceneManagement.Runtime
     /// 场景管理服务的默认实现。
     /// </summary>
     /// <remarks>
+    /// <para>本服务负责协调场景的加载、卸载以及过渡动画的播放。</para>
+    /// <para>加载流程分为两个主要阶段：</para>
+    /// <list type="number">
+    /// <item><description><b>阻断式加载 (Blocking Load)</b>: 在此阶段，<see cref="ILoadingService"/> 处于前台模式，显示 Loading HUD。主要进行场景卸载、资源加载和初始化。</description></item>
+    /// <item><description><b>视觉揭示 (Visual Reveal)</b>: 资源加载完成后，Loading HUD 消失，但过渡遮罩仍然存在。此时播放淡入动画 (PlayIn)，平滑展示新场景。</description></item>
+    /// </list>
     /// <para>所有异步操作使用统一的 <see cref="CancellationToken"/>，在 <see cref="Dispose"/> 时自动取消。</para>
     /// </remarks>
     public sealed class SceneService : ISceneService, IDisposable
@@ -26,6 +34,7 @@ namespace Core.Feature.SceneManagement.Runtime
         private readonly ILogService _logService;
         private readonly ILoadingService _loadingService;
         private readonly IAssetProvider _assetProvider;
+        private readonly ILocalizationService _localizationService;
         private readonly ISceneTransition _transition;
         private readonly ISceneReadyHandlerRegistry _handlerRegistry;
 
@@ -42,12 +51,14 @@ namespace Core.Feature.SceneManagement.Runtime
             ILogService logService,
             ILoadingService loadingService,
             IAssetProvider assetProvider,
+            ILocalizationService localizationService,
             ISceneReadyHandlerRegistry handlerRegistry,
             ISceneTransition sceneTransition = null)
         {
             _logService = logService;
             _loadingService = loadingService;
             _assetProvider = assetProvider;
+            _localizationService = localizationService;
             _handlerRegistry = handlerRegistry;
             _transition = sceneTransition;
         }
@@ -76,31 +87,37 @@ namespace Core.Feature.SceneManagement.Runtime
             {
                 token.ThrowIfCancellationRequested();
 
+                // 获取本地化的加载描述文本
+                var loadingDesc = _localizationService.GetText("Loading_Description_Format", sceneKey);
+
                 // 注意：这里使用 block scope 限制 using 的生命周期
-                using (_loadingService?.Begin($"加载场景 {sceneKey}"))
+                using (_loadingService?.Begin(loadingDesc))
                 {
                     if (_currentSceneInstance.Scene.IsValid())
                     {
-                        _loadingService?.BeginPhase("卸载当前场景");
+                        _loadingService?.BeginPhase(CoreLoadingPhases.Phase_Unload);
                         await UnloadCurrentSceneAsync(token);
-                        _loadingService?.EndPhase("卸载当前场景");
+                        _loadingService?.EndPhase(CoreLoadingPhases.Phase_Unload);
                     }
 
                     if (useLoadingScreen && _transition != null)
                     {
                         OnTransitionStarted?.Invoke(transitionEvent);
-                        _loadingService?.BeginPhase("播放转场动画");
-                        await _transition.PlayOutAsync(CurrentSceneKey, sceneKey, $"切换到 {sceneKey}", token);
-                        _loadingService?.EndPhase("播放转场动画");
+                        _loadingService?.BeginPhase(CoreLoadingPhases.Phase_Transition_Out);
+
+                        var transitionDesc = _localizationService.GetText("Loading_Transition_To", sceneKey);
+                        await _transition.PlayOutAsync(CurrentSceneKey, sceneKey, transitionDesc, token);
+
+                        _loadingService?.EndPhase(CoreLoadingPhases.Phase_Transition_Out);
                     }
                     else
                     {
                         OnTransitionStarted?.Invoke(transitionEvent);
                     }
 
-                    _loadingService?.BeginPhase("加载场景资源");
+                    _loadingService?.BeginPhase(CoreLoadingPhases.Phase_Load_Asset);
 
-                    var progressReporter = _loadingService?.CreateProgressReporter($"加载场景 {sceneKey}", progress) ?? progress;
+                    var progressReporter = _loadingService?.CreateProgressReporter(loadingDesc, progress) ?? progress;
 
                     try
                     {
@@ -131,17 +148,17 @@ namespace Core.Feature.SceneManagement.Runtime
                         CurrentSceneKey = sceneKey;
                         progressReporter?.Report(1.0f);
 
-                        _loadingService?.EndPhase("加载场景资源");
+                        _loadingService?.EndPhase(CoreLoadingPhases.Phase_Load_Asset);
                         _logService.Information(LogCategory.Core, $"场景加载成功: {sceneKey}");
                     }
                     catch (OperationCanceledException)
                     {
-                        _loadingService?.EndPhase("加载场景资源");
+                        _loadingService?.EndPhase(CoreLoadingPhases.Phase_Load_Asset);
                         throw;
                     }
                     catch
                     {
-                        _loadingService?.EndPhase("加载场景资源");
+                        _loadingService?.EndPhase(CoreLoadingPhases.Phase_Load_Asset);
                         throw;
                     }
 
@@ -153,11 +170,11 @@ namespace Core.Feature.SceneManagement.Runtime
 
                     if (readyHandler != null)
                     {
-                        _loadingService?.BeginPhase("等待场景就绪");
+                        _loadingService?.BeginPhase(CoreLoadingPhases.Phase_Wait_Ready);
                         _logService.Information(LogCategory.Core, $"等待 ISceneReadyHandler: {readyHandler.GetType().Name}...");
                         await readyHandler.WaitForSceneReadyAsync();
                         _logService.Information(LogCategory.Core, "场景视觉已就绪");
-                        _loadingService?.EndPhase("等待场景就绪");
+                        _loadingService?.EndPhase(CoreLoadingPhases.Phase_Wait_Ready);
                     }
                     else
                     {
@@ -192,7 +209,7 @@ namespace Core.Feature.SceneManagement.Runtime
             }
 
             // -------------------------------------------------------------------------
-            // 阶段二：视觉揭示（Visual Reveal）
+            // 阶段二：视觉揭示 (Visual Reveal)
             // 此时 LoadingHud 已消失，转场遮罩（SortingOrder 9999）依然覆盖全屏并阻挡输入。
             // 我们平滑地 fade in，展示新场景。
             // -------------------------------------------------------------------------
@@ -205,7 +222,8 @@ namespace Core.Feature.SceneManagement.Runtime
                     if (useLoadingScreen && _transition != null)
                     {
                         _logService.Information(LogCategory.Core, "开始播放淡入动画 (PlayInAsync)");
-                        await _transition.PlayInAsync(sceneKey, $"切换完成 {sceneKey}", token);
+                        var revealDesc = _localizationService.GetText("Loading_Reveal_Scene", sceneKey);
+                        await _transition.PlayInAsync(sceneKey, revealDesc, token);
                     }
 
                     OnTransitionCompleted?.Invoke(transitionEvent);

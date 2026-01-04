@@ -10,6 +10,8 @@ using Core.Feature.SceneManagement.Runtime;
 using Core.Feature.EventBus.Abstractions;
 using Core.Feature.EventBus.Runtime;
 using Core.Runtime.Configuration;
+using Core.Feature.Localization.Abstractions;
+using Core.Feature.Localization.Runtime;
 using UnityEngine;
 using VContainer;
 using VContainer.Unity;
@@ -120,6 +122,10 @@ namespace Core.Bootstrap
             // 加载状态
             builder.Register<LoadingService>(Lifetime.Singleton)
                 .As<ILoadingService>();
+
+            // 本地化服务
+            builder.Register<LocalizationService>(Lifetime.Singleton)
+                .As<ILocalizationService>();
 
             // 场景管理
             var sceneTransitionConfig = _sceneTransitionConfig != null
