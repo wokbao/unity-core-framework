@@ -14,6 +14,9 @@ namespace Core.Feature.SceneManagement.Runtime
     /// <summary>
     /// 场景管理服务的默认实现。
     /// </summary>
+    /// <remarks>
+    /// <para>所有异步操作使用统一的 <see cref="CancellationToken"/>，在 <see cref="Dispose"/> 时自动取消。</para>
+    /// </remarks>
     public sealed class SceneService : ISceneService, IDisposable
     {
         public string CurrentSceneKey { get; private set; }
@@ -28,6 +31,12 @@ namespace Core.Feature.SceneManagement.Runtime
 
         // 存储当前场景实例，用于卸载
         private SceneInstance _currentSceneInstance;
+
+        /// <summary>
+        /// 内部取消令牌源，用于在 Dispose 时取消所有正在进行的操作
+        /// </summary>
+        private CancellationTokenSource _cts = new();
+        private bool _isDisposed;
 
         public SceneService(
             ILogService logService,
@@ -45,6 +54,14 @@ namespace Core.Feature.SceneManagement.Runtime
 
         public async UniTask LoadSceneAsync(string sceneKey, bool useLoadingScreen = true, IProgress<float> progress = null, CancellationToken ct = default)
         {
+            if (_isDisposed) return;
+
+            // 链接外部令牌和内部令牌
+            // 外部 ct：调用方主动取消（如用户操作）
+            // 内部 _cts：SceneService 被 Dispose 时取消
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _cts.Token);
+            var token = linked.Token;
+
             _logService.Information(LogCategory.Core, $"开始加载场景 {sceneKey}");
 
             var transitionEvent = new SceneTransitionEvent(CurrentSceneKey, sceneKey);
@@ -57,13 +74,15 @@ namespace Core.Feature.SceneManagement.Runtime
             // -------------------------------------------------------------------------
             try
             {
+                token.ThrowIfCancellationRequested();
+
                 // 注意：这里使用 block scope 限制 using 的生命周期
                 using (_loadingService?.Begin($"加载场景 {sceneKey}"))
                 {
                     if (_currentSceneInstance.Scene.IsValid())
                     {
                         _loadingService?.BeginPhase("卸载当前场景");
-                        await UnloadCurrentSceneAsync(ct);
+                        await UnloadCurrentSceneAsync(token);
                         _loadingService?.EndPhase("卸载当前场景");
                     }
 
@@ -71,7 +90,7 @@ namespace Core.Feature.SceneManagement.Runtime
                     {
                         OnTransitionStarted?.Invoke(transitionEvent);
                         _loadingService?.BeginPhase("播放转场动画");
-                        await _transition.PlayOutAsync(CurrentSceneKey, sceneKey, $"切换到 {sceneKey}");
+                        await _transition.PlayOutAsync(CurrentSceneKey, sceneKey, $"切换到 {sceneKey}", token);
                         _loadingService?.EndPhase("播放转场动画");
                     }
                     else
@@ -85,6 +104,8 @@ namespace Core.Feature.SceneManagement.Runtime
 
                     try
                     {
+                        token.ThrowIfCancellationRequested();
+
                         // 根据当前场景状态选择加载模式：
                         // - 有效 SceneInstance（正常流程）→ Single 模式替换
                         // - 无效（首次从编辑器启动）→ Additive 模式避免卸载错误
@@ -95,7 +116,7 @@ namespace Core.Feature.SceneManagement.Runtime
                         var previousScene = useAdditive ? SceneManager.GetActiveScene() : default;
 
                         // 使用 IAssetProvider 加载场景
-                        var sceneInstance = await _assetProvider.LoadSceneAsync(sceneKey, loadMode, true, ct);
+                        var sceneInstance = await _assetProvider.LoadSceneAsync(sceneKey, loadMode, true, token);
 
                         // 如果使用 Additive 模式，需要手动卸载旧场景
                         if (useAdditive && previousScene.IsValid() && previousScene != sceneInstance.Scene)
@@ -113,11 +134,18 @@ namespace Core.Feature.SceneManagement.Runtime
                         _loadingService?.EndPhase("加载场景资源");
                         _logService.Information(LogCategory.Core, $"场景加载成功: {sceneKey}");
                     }
+                    catch (OperationCanceledException)
+                    {
+                        _loadingService?.EndPhase("加载场景资源");
+                        throw;
+                    }
                     catch
                     {
                         _loadingService?.EndPhase("加载场景资源");
                         throw;
                     }
+
+                    token.ThrowIfCancellationRequested();
 
                     // 场景加载成功后，进行初始化等待
                     _logService.Information(LogCategory.Core, "场景加载资源完成，检查 SceneReadyHandler...");
@@ -152,6 +180,11 @@ namespace Core.Feature.SceneManagement.Runtime
 
                 } // <--- END USING: LoadingHud 在此处自动消失（因为 ActiveForegroundOperations 归零）
             }
+            catch (OperationCanceledException)
+            {
+                _logService.Information(LogCategory.Core, $"场景加载已取消: {sceneKey}");
+                return;
+            }
             catch (Exception e)
             {
                 _logService.Error(LogCategory.Core, $"场景加载发生异常: {sceneKey}", e);
@@ -165,14 +198,22 @@ namespace Core.Feature.SceneManagement.Runtime
             // -------------------------------------------------------------------------
             if (loadSucceeded)
             {
-                if (useLoadingScreen && _transition != null)
+                try
                 {
-                    _logService.Information(LogCategory.Core, "开始播放淡入动画 (PlayInAsync)");
-                    // 注意：此时不再包裹在 Loading Scope 中，属于纯视觉过渡
-                    await _transition.PlayInAsync(sceneKey, $"切换完成 {sceneKey}");
-                }
+                    token.ThrowIfCancellationRequested();
 
-                OnTransitionCompleted?.Invoke(transitionEvent);
+                    if (useLoadingScreen && _transition != null)
+                    {
+                        _logService.Information(LogCategory.Core, "开始播放淡入动画 (PlayInAsync)");
+                        await _transition.PlayInAsync(sceneKey, $"切换完成 {sceneKey}", token);
+                    }
+
+                    OnTransitionCompleted?.Invoke(transitionEvent);
+                }
+                catch (OperationCanceledException)
+                {
+                    _logService.Information(LogCategory.Core, "场景淡入动画已取消");
+                }
             }
         }
 
@@ -205,6 +246,10 @@ namespace Core.Feature.SceneManagement.Runtime
             {
                 await _assetProvider.UnloadSceneAsync(_currentSceneInstance, ct);
             }
+            catch (OperationCanceledException)
+            {
+                _logService.Information(LogCategory.Core, "场景卸载已取消");
+            }
             catch (Exception ex)
             {
                 _logService.Error(LogCategory.Core, "卸载场景异常", ex);
@@ -215,6 +260,14 @@ namespace Core.Feature.SceneManagement.Runtime
 
         public void Dispose()
         {
+            if (_isDisposed) return;
+            _isDisposed = true;
+
+            // 取消所有正在进行的操作
+            _cts.Cancel();
+            _cts.Dispose();
+            _cts = null;
+
             OnTransitionStarted = null;
             OnTransitionCompleted = null;
         }

@@ -1,3 +1,4 @@
+using System.Threading;
 using Core.Feature.SceneManagement.Abstractions;
 using Cysharp.Threading.Tasks;
 
@@ -10,12 +11,12 @@ namespace Core.Feature.SceneManagement.Runtime
     {
         public SceneTransitionMode Mode => SceneTransitionMode.None;
 
-        public UniTask PlayOutAsync(string fromScene, string toScene, string description = null)
+        public UniTask PlayOutAsync(string fromScene, string toScene, string description, CancellationToken ct)
         {
             return UniTask.CompletedTask;
         }
 
-        public UniTask PlayInAsync(string toScene, string description = null)
+        public UniTask PlayInAsync(string toScene, string description, CancellationToken ct)
         {
             return UniTask.CompletedTask;
         }

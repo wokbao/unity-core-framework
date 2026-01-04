@@ -1,3 +1,4 @@
+using System.Threading;
 using Core.Feature.SceneManagement.Abstractions;
 using Cysharp.Threading.Tasks;
 
@@ -17,14 +18,14 @@ namespace Core.Feature.SceneManagement.Runtime
             _fallback = fallback;
         }
 
-        public UniTask PlayOutAsync(string fromScene, string toScene, string description = null)
+        public UniTask PlayOutAsync(string fromScene, string toScene, string description, CancellationToken ct)
         {
-            return _fallback.PlayOutAsync(fromScene, toScene, description);
+            return _fallback.PlayOutAsync(fromScene, toScene, description, ct);
         }
 
-        public UniTask PlayInAsync(string toScene, string description = null)
+        public UniTask PlayInAsync(string toScene, string description, CancellationToken ct)
         {
-            return _fallback.PlayInAsync(toScene, description);
+            return _fallback.PlayInAsync(toScene, description, ct);
         }
     }
 }

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using Core.Feature.Logging.Abstractions;
 using Core.Feature.SceneManagement.Abstractions;
 using Cysharp.Threading.Tasks;
@@ -40,14 +41,14 @@ namespace Core.Feature.SceneManagement.Runtime
                 : null;
         }
 
-        public UniTask PlayOutAsync(string fromScene, string toScene, string description = null)
+        public UniTask PlayOutAsync(string fromScene, string toScene, string description, CancellationToken ct)
         {
-            return Resolve().PlayOutAsync(fromScene, toScene, description);
+            return Resolve().PlayOutAsync(fromScene, toScene, description, ct);
         }
 
-        public UniTask PlayInAsync(string toScene, string description = null)
+        public UniTask PlayInAsync(string toScene, string description, CancellationToken ct)
         {
-            return Resolve().PlayInAsync(toScene, description);
+            return Resolve().PlayInAsync(toScene, description, ct);
         }
 
         private ISceneTransition Resolve()

@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using Core.Feature.SceneManagement.Abstractions;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
@@ -9,6 +10,9 @@ namespace Core.Feature.SceneManagement.Runtime
     /// <summary>
     /// 基于 UI Canvas 的黑场淡入淡出过渡，使用不随时间缩放的插值确保在加载期间也能平滑播放。
     /// </summary>
+    /// <remarks>
+    /// 所有异步操作使用统一的 <see cref="CancellationToken"/>，在 <see cref="Dispose"/> 时自动取消。
+    /// </remarks>
     public sealed class SceneFadeTransition : ISelectableSceneTransition, IDisposable
     {
         private readonly float _fadeOutDuration;
@@ -18,6 +22,12 @@ namespace Core.Feature.SceneManagement.Runtime
         private readonly GameObject _root;
 
         public SceneTransitionMode Mode => SceneTransitionMode.Fade;
+
+        /// <summary>
+        /// 内部取消令牌源，用于在 Dispose 时取消所有正在进行的操作
+        /// </summary>
+        private CancellationTokenSource _cts = new();
+        private bool _isDisposed;
 
         public SceneFadeTransition(
             float fadeOutDuration = 0.35f,
@@ -51,33 +61,37 @@ namespace Core.Feature.SceneManagement.Runtime
             UnityEngine.Object.DontDestroyOnLoad(_root);
         }
 
-        public async UniTask PlayOutAsync(string fromScene, string toScene, string description = null)
+        public async UniTask PlayOutAsync(string fromScene, string toScene, string description, CancellationToken ct)
         {
-            await FadeAsync(0f, 1f, _fadeOutDuration);
+            if (_isDisposed) return;
+
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _cts.Token);
+            await FadeAsync(0f, 1f, _fadeOutDuration, linked.Token);
         }
 
-        public async UniTask PlayInAsync(string toScene, string description = null)
+        public async UniTask PlayInAsync(string toScene, string description, CancellationToken ct)
         {
-            await FadeAsync(1f, 0f, _fadeInDuration);
+            if (_isDisposed) return;
+
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _cts.Token);
+            await FadeAsync(1f, 0f, _fadeInDuration, linked.Token);
         }
 
-        private async UniTask FadeAsync(float from, float to, float duration)
+        private async UniTask FadeAsync(float from, float to, float duration, CancellationToken ct)
         {
-            if (_canvasGroup == null)
-            {
-                return;
-            }
-
             var time = 0f;
             _canvasGroup.blocksRaycasts = true;
             _canvasGroup.interactable = true;
 
             while (time < duration)
             {
+                ct.ThrowIfCancellationRequested();
+
                 time += Time.unscaledDeltaTime;
                 var t = Mathf.Clamp01(time / duration);
                 _canvasGroup.alpha = Mathf.Lerp(from, to, t);
-                await UniTask.Yield(PlayerLoopTiming.Update);
+
+                await UniTask.Yield(PlayerLoopTiming.Update, ct);
             }
 
             _canvasGroup.alpha = to;
@@ -90,6 +104,13 @@ namespace Core.Feature.SceneManagement.Runtime
 
         public void Dispose()
         {
+            if (_isDisposed) return;
+            _isDisposed = true;
+
+            _cts.Cancel();
+            _cts.Dispose();
+            _cts = null;
+
             if (_root != null)
             {
                 UnityEngine.Object.Destroy(_root);

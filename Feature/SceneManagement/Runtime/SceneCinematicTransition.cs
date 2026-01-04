@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using Core.Feature.SceneManagement.Abstractions;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
@@ -8,8 +9,11 @@ namespace Core.Feature.SceneManagement.Runtime
 {
     /// <summary>
     /// 影院式过渡：上下黑条闭合 + 叠加淡入淡出，使用不受时间缩放影响的插值。
-    /// 设计目标：默认即可获得更具“大片感”的场景切换效果，无需额外资源。
     /// </summary>
+    /// <remarks>
+    /// <para>所有异步操作使用统一的 <see cref="CancellationToken"/>，在 <see cref="Dispose"/> 时自动取消。</para>
+    /// <para>设计目标：默认即可获得更具"大片感"的场景切换效果，无需额外资源。</para>
+    /// </remarks>
     public sealed class SceneCinematicTransition : ISelectableSceneTransition, IDisposable
     {
         private readonly float _barHeightRatio;
@@ -19,6 +23,7 @@ namespace Core.Feature.SceneManagement.Runtime
         private readonly float _barOpenDuration;
         private readonly Color _overlayColor;
         private readonly int _sortingOrder;
+
         public SceneTransitionMode Mode => SceneTransitionMode.Cinematic;
 
         private readonly GameObject _root;
@@ -27,6 +32,12 @@ namespace Core.Feature.SceneManagement.Runtime
         private readonly RectTransform _bottomBar;
         private readonly Image _overlay;
         private readonly float _barHeight;
+
+        /// <summary>
+        /// 内部取消令牌源，用于在 Dispose 时取消所有正在进行的操作
+        /// </summary>
+        private CancellationTokenSource _cts = new();
+        private bool _isDisposed;
 
         public SceneCinematicTransition(
             float barHeightRatio = 0.18f,
@@ -53,7 +64,7 @@ namespace Core.Feature.SceneManagement.Runtime
             canvas.sortingOrder = _sortingOrder;
 
             _canvasGroup = _root.GetComponent<CanvasGroup>();
-            _canvasGroup.alpha = 1f; // 过渡始终可见，由内部条与遮罩控制实际透明度
+            _canvasGroup.alpha = 1f;
             _canvasGroup.blocksRaycasts = false;
             _canvasGroup.interactable = false;
 
@@ -75,23 +86,44 @@ namespace Core.Feature.SceneManagement.Runtime
             UnityEngine.Object.DontDestroyOnLoad(_root);
         }
 
-        public async UniTask PlayOutAsync(string fromScene, string toScene, string description = null)
+        public async UniTask PlayOutAsync(string fromScene, string toScene, string description, CancellationToken ct)
         {
+            if (_isDisposed) return;
+
+            // 链接外部令牌和内部令牌
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _cts.Token);
+            var token = linked.Token;
+
+            token.ThrowIfCancellationRequested();
+
             _canvasGroup.blocksRaycasts = true;
             _canvasGroup.interactable = true;
 
             // 同时执行：黑条合拢 + 黑色叠加淡入
             await UniTask.WhenAll(
-                AnimateBarsAsync(openToClose: true, _barCloseDuration),
-                FadeOverlayAsync(0f, 1f, _fadeOutDuration)
+                AnimateBarsAsync(openToClose: true, _barCloseDuration, token),
+                FadeOverlayAsync(0f, 1f, _fadeOutDuration, token)
             );
         }
 
-        public async UniTask PlayInAsync(string toScene, string description = null)
+        public async UniTask PlayInAsync(string toScene, string description, CancellationToken ct)
         {
+            if (_isDisposed) return;
+
+            // 链接外部令牌和内部令牌
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _cts.Token);
+            var token = linked.Token;
+
+            token.ThrowIfCancellationRequested();
+
             // 先淡出叠加，再打开黑条
-            await FadeOverlayAsync(1f, 0f, _fadeInDuration);
-            await AnimateBarsAsync(openToClose: false, _barOpenDuration);
+            await FadeOverlayAsync(1f, 0f, _fadeInDuration, token);
+
+            token.ThrowIfCancellationRequested();
+
+            await AnimateBarsAsync(openToClose: false, _barOpenDuration, token);
+
+            token.ThrowIfCancellationRequested();
 
             _canvasGroup.blocksRaycasts = false;
             _canvasGroup.interactable = false;
@@ -113,7 +145,7 @@ namespace Core.Feature.SceneManagement.Runtime
             return rect;
         }
 
-        private async UniTask AnimateBarsAsync(bool openToClose, float duration)
+        private async UniTask AnimateBarsAsync(bool openToClose, float duration, CancellationToken ct)
         {
             var elapsed = 0f;
             var topStart = openToClose ? _barHeight : 0f;
@@ -123,33 +155,48 @@ namespace Core.Feature.SceneManagement.Runtime
 
             while (elapsed < duration)
             {
+                ct.ThrowIfCancellationRequested();
+
                 elapsed += Time.unscaledDeltaTime;
                 var t = Mathf.Clamp01(elapsed / duration);
                 _topBar.anchoredPosition = new Vector2(0f, Mathf.Lerp(topStart, topEnd, t));
                 _bottomBar.anchoredPosition = new Vector2(0f, Mathf.Lerp(bottomStart, bottomEnd, t));
-                await UniTask.Yield(PlayerLoopTiming.Update);
+
+                await UniTask.Yield(PlayerLoopTiming.Update, ct);
             }
 
             _topBar.anchoredPosition = new Vector2(0f, topEnd);
             _bottomBar.anchoredPosition = new Vector2(0f, bottomEnd);
         }
 
-        private async UniTask FadeOverlayAsync(float from, float to, float duration)
+        private async UniTask FadeOverlayAsync(float from, float to, float duration, CancellationToken ct)
         {
             var elapsed = 0f;
             while (elapsed < duration)
             {
+                ct.ThrowIfCancellationRequested();
+
                 elapsed += Time.unscaledDeltaTime;
                 var t = Mathf.Clamp01(elapsed / duration);
                 var alpha = Mathf.Lerp(from, to, t);
                 _overlay.canvasRenderer.SetAlpha(alpha);
-                await UniTask.Yield(PlayerLoopTiming.Update);
+
+                await UniTask.Yield(PlayerLoopTiming.Update, ct);
             }
+
             _overlay.canvasRenderer.SetAlpha(to);
         }
 
         public void Dispose()
         {
+            if (_isDisposed) return;
+            _isDisposed = true;
+
+            // 取消所有正在进行的操作
+            _cts.Cancel();
+            _cts.Dispose();
+            _cts = null;
+
             if (_root != null)
             {
                 UnityEngine.Object.Destroy(_root);
