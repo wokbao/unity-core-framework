@@ -12,6 +12,10 @@ using Core.Feature.EventBus.Runtime;
 using Core.Runtime.Configuration;
 using Core.Feature.Localization.Abstractions;
 using Core.Feature.Localization.Runtime;
+using Core.Feature.Save.Abstractions;
+using Core.Feature.Save.Runtime;
+using Core.Feature.TimeManagement.Abstractions;
+using Core.Feature.TimeManagement.Runtime;
 using UnityEngine;
 using VContainer;
 using VContainer.Unity;
@@ -170,6 +174,15 @@ namespace Core.Bootstrap
 
             builder.Register<SceneService>(Lifetime.Singleton)
                 .As<ISceneService>();
+
+            // 数据持久化服务
+            builder.Register<SaveService>(Lifetime.Singleton)
+                .As<ISaveService>();
+
+            // 时间管理器（使用 ITickable 每帧更新计时器）
+            builder.Register<TimeManager>(Lifetime.Singleton)
+                .As<ITimeManager>()
+                .As<ITickable>();
 
             // ========================================
             // 注意：不再需要 EntryPoint
