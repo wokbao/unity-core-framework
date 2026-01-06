@@ -127,6 +127,11 @@ namespace Core.Bootstrap
             builder.Register<LoadingService>(Lifetime.Singleton)
                 .As<ILoadingService>();
 
+            // 本地化配置 (Fallback: 如果 ConfigManifest 中未包含 LocalizationConfig，使用默认配置)
+            // 注意：如果 ConfigRegistry 已注册了 LocalizationConfig，此注册会被覆盖
+            builder.RegisterInstance(DefaultLocalizationOptions.Instance)
+                .As<ILocalizationOptions>();
+
             // 本地化服务
             builder.Register<LocalizationService>(Lifetime.Singleton)
                 .As<ILocalizationService>();

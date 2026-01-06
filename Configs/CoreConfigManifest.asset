@@ -27,5 +27,12 @@ MonoBehaviour:
     Priority: 0
     DevOnly: 0
     ProductionOnly: 0
+  - Name: LocalizationConfig
+    AddressableKey: Core/Configs/LocalizationConfig
+    ConfigTypeName: Core.Feature.Localization.Runtime.LocalizationConfig
+    IsRequired: 1
+    Priority: 0
+    DevOnly: 0
+    ProductionOnly: 0
   BlockOnFailure: 0
   EnableValidation: 1

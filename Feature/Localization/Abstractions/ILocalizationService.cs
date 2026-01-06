@@ -70,6 +70,13 @@ namespace Core.Feature.Localization.Abstractions
         UniTask SetLocaleAsync(string localeCode, CancellationToken ct = default);
 
         /// <summary>
+        /// 异步切换语言（强类型枚举）。
+        /// </summary>
+        /// <param name="locale">支持的语言枚举</param>
+        /// <param name="ct">取消令牌</param>
+        UniTask SetLocaleAsync(SupportedLocale locale, CancellationToken ct = default);
+
+        /// <summary>
         /// 获取所有可用的 Locale。
         /// </summary>
         System.Collections.Generic.IReadOnlyList<Locale> AvailableLocales { get; }

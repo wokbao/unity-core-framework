@@ -141,6 +141,9 @@ namespace Core.Runtime.Configuration
                 genericMethod.Invoke(null, new object[] { builder, config, configName });
 
                 Debug.Log($"[ConfigRegistry] ✓ 注册配置: {configName} ({configType.Name})");
+
+                // 自动注册配置实现的接口（遵循 DIP 原则）
+                RegisterConfigInterfaces(builder, configName, config);
             }
             catch (Exception ex)
             {
@@ -162,6 +165,62 @@ namespace Core.Runtime.Configuration
 
             // 使用泛型扩展方法注册
             builder.RegisterInstance(typedConfig);
+        }
+
+        /// <summary>
+        /// 自动注册配置实现的自定义接口
+        /// </summary>
+        /// <remarks>
+        /// <para>遵循依赖倒置原则 (DIP)，配置可以实现 Core 层定义的接口。</para>
+        /// <para>此方法会自动检测并注册这些接口，服务可以依赖接口而非具体配置类。</para>
+        /// <para>排除的接口：Unity 和 .NET 基础接口（如 ISerializationCallbackReceiver）</para>
+        /// </remarks>
+        private static void RegisterConfigInterfaces(IContainerBuilder builder, string configName, object config)
+        {
+            var configType = config.GetType();
+            var interfaces = configType.GetInterfaces();
+
+            foreach (var iface in interfaces)
+            {
+                // 跳过系统和 Unity 内置接口
+                if (iface.Namespace?.StartsWith("System") == true ||
+                    iface.Namespace?.StartsWith("Unity") == true ||
+                    iface.Namespace?.StartsWith("UnityEngine") == true)
+                {
+                    continue;
+                }
+
+                // 使用反射注册为接口类型
+                try
+                {
+                    var registerMethod = typeof(ConfigRegistry).GetMethod(
+                        nameof(RegisterAsInterface),
+                        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static
+                    );
+
+                    if (registerMethod != null)
+                    {
+                        var genericMethod = registerMethod.MakeGenericMethod(iface);
+                        genericMethod.Invoke(null, new object[] { builder, config });
+                        Debug.Log($"[ConfigRegistry]   ↳ 同时注册为接口: {iface.Name}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[ConfigRegistry] 注册接口 {iface.Name} 失败: {ex.Message}");
+                }
+            }
+        }
+
+        /// <summary>
+        /// 泛型辅助方法：将配置注册为指定接口类型
+        /// </summary>
+        private static void RegisterAsInterface<TInterface>(IContainerBuilder builder, object config) where TInterface : class
+        {
+            if (config is TInterface typedConfig)
+            {
+                builder.RegisterInstance(typedConfig);
+            }
         }
     }
 }
