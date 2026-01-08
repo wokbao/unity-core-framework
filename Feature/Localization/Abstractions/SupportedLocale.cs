@@ -80,7 +80,12 @@ namespace Core.Feature.Localization.Abstractions
             => LocaleToCodeMap.TryGetValue(locale, out var code) ? code : "en";
 
         public static SupportedLocale FromCode(string code)
-            => CodeToLocaleMap.TryGetValue(code, out var locale) ? locale : SupportedLocale.English;
+        {
+            if (string.IsNullOrEmpty(code))
+                return SupportedLocale.English;
+
+            return CodeToLocaleMap.TryGetValue(code, out var locale) ? locale : SupportedLocale.English;
+        }
     }
 }
 
